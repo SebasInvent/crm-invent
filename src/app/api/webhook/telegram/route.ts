@@ -28,21 +28,30 @@ interface TelegramUpdate {
 // Webhook para recibir mensajes de Telegram
 export async function POST(request: Request) {
   try {
-    const SYNC_SECRET = process.env.SYNC_SECRET
-    const authHeader = request.headers.get('authorization')
+    // Log para debugging
+    console.log('📨 Telegram webhook recibido:', new Date().toISOString())
     
-    // Verificar secret key si está configurado
-    if (SYNC_SECRET && authHeader !== `Bearer ${SYNC_SECRET}`) {
+    // Nota: Telegram NO envía headers de autorización, por lo que no validamos SYNC_SECRET
+    // Si necesitas seguridad extra, usa el token en la URL: /api/webhook/telegram?token=XXX
+    const { searchParams } = new URL(request.url)
+    const token = searchParams.get('token')
+    const expectedToken = process.env.TELEGRAM_WEBHOOK_TOKEN
+    
+    if (expectedToken && token !== expectedToken) {
+      console.error('❌ Token de webhook inválido')
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: 'Invalid webhook token' },
         { status: 401 }
       )
     }
 
     const update: TelegramUpdate = await request.json()
+    console.log('📦 Update de Telegram:', JSON.stringify(update, null, 2))
+    
     const message = update.message || update.edited_message
 
-    if (!message || !message.text) {
+    if (!message) {
+      console.log('⚠️ No hay mensaje en el update')
       return NextResponse.json(
         { success: true, message: 'No message content' },
         { status: 200 }
@@ -56,17 +65,27 @@ export async function POST(request: Request) {
     const clientName = message.from?.first_name + (message.from?.last_name ? ` ${message.from.last_name}` : '') || 'Telegram User'
     const username = message.from?.username
 
+    console.log('👤 Buscando cliente por telegram_chat_id:', telegramChatId)
+
     // Buscar cliente existente por telegram_chat_id
-    let { data: existingClient } = await supabase
+    let { data: existingClient, error: findError } = await supabase
       .from('clients')
       .select('*')
       .eq('telegram_chat_id', telegramChatId)
-      .single()
+      .maybeSingle()
+    
+    if (findError) {
+      console.error('❌ Error buscando cliente:', findError)
+    }
 
     let clientId = existingClient?.id
+    let isNewClient = false
 
     // Si no existe, crear nuevo cliente
     if (!existingClient) {
+      console.log('🆕 Creando nuevo cliente:', clientName)
+      isNewClient = true
+      
       const { data: newClient, error: clientError } = await supabase
         .from('clients')
         .insert({
@@ -79,21 +98,23 @@ export async function POST(request: Request) {
           lifetime_value: 0,
           telegram_chat_id: telegramChatId,
           telegram_username: username,
-          source: 'telegram'
+          source: 'telegram',
+          last_interaction_at: new Date().toISOString()
         })
         .select()
         .single()
 
       if (clientError) {
-        console.error('Error creating client from Telegram:', clientError)
+        console.error('❌ Error creando cliente:', clientError)
         return NextResponse.json(
-          { error: 'Failed to create client' },
+          { error: 'Failed to create client', details: clientError },
           { status: 500 }
         )
       }
 
       clientId = newClient.id
       existingClient = newClient
+      console.log('✅ Cliente creado:', clientId)
 
       // Crear proyecto automático para nuevos leads de Telegram
       const { data: newProject, error: projectError } = await supabase
@@ -101,7 +122,7 @@ export async function POST(request: Request) {
         .insert({
           client_id: clientId,
           name: `Consulta Telegram - ${clientName}`,
-          description: `Proyecto creado automáticamente desde conversación de Telegram. Primer mensaje: "${message.text.substring(0, 100)}${message.text.length > 100 ? '...' : ''}"`,
+          description: `Proyecto creado automáticamente desde conversación de Telegram. Primer mensaje: "${(message.text || '').substring(0, 100)}..."`,
           status: 'planning',
           budget: null,
           start_date: new Date().toISOString(),
@@ -111,44 +132,65 @@ export async function POST(request: Request) {
         .single()
 
       if (projectError) {
-        console.error('Error creating project:', projectError)
-      }
-
-      // Crear tarea inicial
-      if (newProject) {
-        await supabase.from('tasks').insert({
-          project_id: newProject.id,
+        console.error('❌ Error creando proyecto:', projectError)
+      } else {
+        console.log('✅ Proyecto creado:', newProject?.id)
+        
+        // Crear tarea inicial
+        const { error: taskError } = await supabase.from('tasks').insert({
+          project_id: newProject?.id,
           title: 'Responder a consulta de Telegram',
-          description: `Mensaje del cliente: ${message.text}`,
+          description: `Mensaje del cliente: ${message.text || message.caption || '(sin texto)'}`,
           status: 'todo',
           priority: 'high',
           due_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 horas
         })
+        
+        if (taskError) {
+          console.error('❌ Error creando tarea:', taskError)
+        } else {
+          console.log('✅ Tarea creada')
+        }
       }
+    } else {
+      console.log('👤 Cliente existente encontrado:', clientId)
+      
+      // Actualizar last_interaction_at
+      await supabase
+        .from('clients')
+        .update({ last_interaction_at: new Date().toISOString() })
+        .eq('id', clientId)
     }
 
     // Guardar la conversación
+    const conversationData = {
+      client_id: clientId,
+      message: message.text || message.caption || '',
+      channel: 'telegram',
+      created_at: new Date(message.date * 1000).toISOString(),
+      telegram_message_id: message.message_id.toString(),
+      telegram_chat_id: telegramChatId,
+      sender_type: 'client',
+      raw_data: update
+    }
+    
+    console.log('💬 Guardando conversación:', conversationData)
+    
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
-      .insert({
-        client_id: clientId,
-        message: message.text || message.caption || '',
-        channel: 'telegram',
-        created_at: new Date(message.date * 1000).toISOString(),
-        telegram_message_id: message.message_id.toString(),
-        telegram_chat_id: telegramChatId,
-        raw_data: update
-      })
+      .insert(conversationData)
       .select()
       .single()
 
     if (convError) {
-      console.error('Error saving conversation:', convError)
+      console.error('❌ Error guardando conversación:', convError)
       return NextResponse.json(
-        { error: 'Failed to save conversation' },
+        { error: 'Failed to save conversation', details: convError },
         { status: 500 }
       )
     }
+    
+    console.log('✅ Conversación guardada:', conversation?.id)
 
     // Notificar a OpenClaw/Sincronía si está configurado
     const openclawWebhookUrl = process.env.OPENCLAW_WEBHOOK_URL
@@ -167,8 +209,9 @@ export async function POST(request: Request) {
             source: 'telegram'
           })
         })
+        console.log('✅ Notificación enviada a OpenClaw')
       } catch (notifyError) {
-        console.error('Error notifying OpenClaw:', notifyError)
+        console.error('⚠️ Error notificando OpenClaw:', notifyError)
       }
     }
 
@@ -176,29 +219,38 @@ export async function POST(request: Request) {
       success: true,
       client_id: clientId,
       conversation_id: conversation?.id,
-      is_new_client: !existingClient?.id
+      is_new_client: isNewClient
     })
 
   } catch (error) {
-    console.error('Error in Telegram webhook:', error)
+    console.error('❌ Error fatal en Telegram webhook:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Internal server error', details: error.message },
       { status: 500 }
     )
   }
 }
 
-// GET para verificación del webhook (requerido por Telegram)
+// GET para verificación del webhook
 export async function GET(request: Request) {
+  console.log('🔍 GET request a webhook de Telegram:', new Date().toISOString())
+  
   const { searchParams } = new URL(request.url)
   const mode = searchParams.get('hub.mode')
   const token = searchParams.get('hub.verify_token')
   const challenge = searchParams.get('hub.challenge')
 
-  // Verificación simple
+  console.log('🔑 Parámetros:', { mode, token: token ? '***' : null, challenge: challenge ? '***' : null })
+
+  // Verificación para webhooks (estilo Facebook/Meta)
   if (mode === 'subscribe' && token === process.env.TELEGRAM_VERIFY_TOKEN) {
+    console.log('✅ Verificación exitosa')
     return new NextResponse(challenge, { status: 200 })
   }
 
-  return NextResponse.json({ status: 'Webhook active' })
+  return NextResponse.json({ 
+    status: 'Webhook active',
+    timestamp: new Date().toISOString(),
+    endpoint: '/api/webhook/telegram'
+  })
 }
