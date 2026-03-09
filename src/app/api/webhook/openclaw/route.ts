@@ -55,18 +55,22 @@ export async function POST(request: Request) {
     const SYNC_SECRET = process.env.SYNC_SECRET
     const authHeader = request.headers.get('authorization')
     
-    // Verificar secret key
+    // Verificar secret key SOLO si está configurado
     if (SYNC_SECRET && authHeader !== `Bearer ${SYNC_SECRET}`) {
+      console.error('[OpenClaw Webhook] Unauthorized - Invalid or missing SYNC_SECRET')
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
       )
     }
+    
+    console.log('[OpenClaw Webhook] Authorized request received')
 
     const payload: OpenClawPayload = await request.json()
     const supabase = getServiceRoleClient()
 
-    console.log(`[OpenClaw Webhook] Received event: ${payload.event}`, payload)
+    console.log(`[OpenClaw Webhook] Event: ${payload.event}, Session: ${payload.session_id}`)
+    console.log('[OpenClaw Webhook] Payload:', JSON.stringify(payload, null, 2))
 
     switch (payload.event) {
       case 'conversation.started':
@@ -165,17 +169,27 @@ async function handleConversationMessage(payload: OpenClawPayload, supabase: any
   }
 
   try {
-    // Buscar cliente por session_id
-    const { data: existingClient } = await supabase
+    // Buscar cliente por openclaw_session_id
+    console.log(`[OpenClaw] Buscando cliente por session_id: ${session_id}`)
+    
+    const { data: existingClient, error: findError } = await supabase
       .from('clients')
       .select('*')
       .eq('openclaw_session_id', session_id)
-      .single()
+      .maybeSingle()
+    
+    if (findError) {
+      console.error('[OpenClaw] Error buscando cliente:', findError)
+    }
 
     let clientId = existingClient?.id
+    let isNewClient = false
 
     // Si no existe, crear nuevo
     if (!existingClient) {
+      console.log('[OpenClaw] Cliente no encontrado, creando nuevo...')
+      isNewClient = true
+      
       const result = await processNewInteraction({
         name: clientData.name,
         email: clientData.email,
@@ -186,7 +200,10 @@ async function handleConversationMessage(payload: OpenClawPayload, supabase: any
         metadata: { session_id, ...data.metadata }
       })
       clientId = result.client.id
+      console.log('[OpenClaw] Nuevo cliente creado:', clientId)
     } else {
+      console.log('[OpenClaw] Cliente existente encontrado:', clientId)
+      
       // Actualizar timestamp de última interacción
       await supabase
         .from('clients')
@@ -195,27 +212,37 @@ async function handleConversationMessage(payload: OpenClawPayload, supabase: any
     }
 
     // Guardar mensaje en conversations
+    const conversationData = {
+      client_id: clientId,
+      message: message.content,
+      channel: 'other',
+      openclaw_session_id: session_id,
+      sender_type: message.sender,
+      created_at: message.timestamp || new Date().toISOString(),
+      raw_data: { message, agent: data.agent, metadata: data.metadata }
+    }
+    
+    console.log('[OpenClaw] Guardando conversación:', conversationData)
+    
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
-      .insert({
-        client_id: clientId,
-        message: message.content,
-        channel: 'other',
-        openclaw_session_id: session_id,
-        sender_type: message.sender,
-        created_at: message.timestamp || new Date().toISOString(),
-        raw_data: { message, agent: data.agent, metadata: data.metadata }
-      })
+      .insert(conversationData)
       .select()
       .single()
 
-    if (convError) throw convError
+    if (convError) {
+      console.error('[OpenClaw] Error guardando conversación:', convError)
+      throw convError
+    }
+    
+    console.log('[OpenClaw] Conversación guardada:', conversation.id)
 
     return NextResponse.json({
       success: true,
       event: 'conversation.message',
       conversation_id: conversation.id,
-      client_id: clientId
+      client_id: clientId,
+      is_new_client: isNewClient
     })
 
   } catch (error) {
