@@ -8,6 +8,13 @@ export interface Client {
   priority: 'low' | 'medium' | 'high';
   lifetime_value: number;
   created_at: string;
+  // Campos para integración con Telegram y OpenClaw
+  telegram_chat_id?: string | null;
+  telegram_username?: string | null;
+  openclaw_session_id?: string | null;
+  source?: 'manual' | 'telegram' | 'openclaw' | 'web' | 'other';
+  last_interaction_at?: string | null;
+  metadata?: Record<string, any> | null;
 }
 
 export interface Project {
@@ -75,6 +82,12 @@ export interface Conversation {
   message: string;
   channel: 'telegram' | 'email' | 'whatsapp' | 'other';
   created_at: string;
+  // Campos adicionales para integraciones
+  telegram_message_id?: string | null;
+  telegram_chat_id?: string | null;
+  openclaw_session_id?: string | null;
+  sender_type?: 'client' | 'agent' | 'system' | 'bot';
+  raw_data?: Record<string, any> | null;
 }
 
 export interface EmailLog {
@@ -84,6 +97,27 @@ export interface EmailLog {
   subject: string;
   status: 'sent' | 'failed' | 'pending';
   sent_at: string;
+  // Campos adicionales
+  from_email?: string | null;
+  template_id?: string | null;
+  openclaw_message_id?: string | null;
+}
+
+// Tipo para sesiones de chat (main sessions de OpenClaw/Sincronía)
+export interface ChatSession {
+  id: string;
+  client_id: string;
+  agent_id?: string | null;
+  session_type: 'telegram' | 'whatsapp' | 'webchat' | 'email' | 'other';
+  external_session_id: string; // ID de la sesión en Telegram/OpenClaw
+  status: 'active' | 'closed' | 'archived';
+  started_at: string;
+  ended_at?: string | null;
+  last_message_at?: string | null;
+  message_count: number;
+  metadata?: Record<string, any> | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // Agent Management Types
@@ -211,6 +245,11 @@ export type Database = {
         Row: AgentDeliverable;
         Insert: Omit<AgentDeliverable, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string };
         Update: Partial<AgentDeliverable>;
+      };
+      chat_sessions: {
+        Row: ChatSession;
+        Insert: Omit<ChatSession, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string };
+        Update: Partial<ChatSession>;
       };
     };
   };
