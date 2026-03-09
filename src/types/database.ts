@@ -175,6 +175,103 @@ export interface AgentDeliverable {
   updated_at: string;
 }
 
+// Lead Management - Basado en metodología Jung
+export interface Lead {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  company: string | null;
+  job_title: string | null;
+  
+  // Arquetipo Jung (segmentación psicológica)
+  jung_archetype: 
+    | 'hero_entrepreneur'       // Emprendedor visionario
+    | 'sage_conservative'       // Empresario conservador
+    | 'caregiver_stressed'      // Director de marketing estresado
+    | 'artist_specialist'       // Especialista independiente
+    | 'ruler_executive'         // Ejecutivo results-driven
+    | 'explorer_merchant'       // Comerciante digital ambicioso
+    | null;
+  
+  // Categorización BANT
+  budget_level: 'high' | 'medium' | 'low' | null;
+  authority_level: 'decision_maker' | 'influencer' | 'user' | null;
+  need_urgency: 'critical' | 'high' | 'medium' | 'low' | null;
+  timeline: 'immediate' | 'short_term' | 'medium_term' | 'long_term' | null;
+  
+  // Scoring y priorización
+  lead_score: number; // 0-100
+  lead_status: 'hot' | 'warm' | 'cold' | 'dead' | 'converted';
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  
+  // Información de la fuente
+  source: 'scraped' | 'web_form' | 'referral' | 'linkedin' | 'event' | 'cold_outreach' | 'telegram' | 'openclaw' | 'other';
+  source_url: string | null; // URL de donde se scrapeó
+  source_platform: 'linkedin' | 'instagram' | 'google_business' | 'mercado_libre' | 'rappi' | 'website' | 'google_maps' | 'directory' | null;
+  
+  // Datos de la empresa/industria
+  industry: string | null;
+  company_size: 'startup' | 'small' | 'medium' | 'large' | 'enterprise' | null;
+  annual_revenue: number | null;
+  location: string | null;
+  website: string | null;
+  linkedin_url: string | null;
+  
+  // Metadatos del scraping
+  scraped_data: {
+    raw_text?: string;
+    social_profiles?: string[];
+    technologies?: string[];
+    competitors?: string[];
+    employees_count?: number;
+    founded_year?: number;
+  } | null;
+  
+  // Comunicación y seguimiento
+  last_contact_date: string | null;
+  next_follow_up_date: string | null;
+  contact_attempts: number;
+  communication_channel: 'email' | 'linkedin' | 'whatsapp' | 'phone' | null;
+  assigned_to: string | null; // ID del agente
+  
+  // Conversión
+  converted_to_client_id: string | null;
+  converted_at: string | null;
+  conversion_value: number | null;
+  
+  // Tags y categorización
+  tags: string[];
+  notes: string | null;
+  
+  // GDPR/Consentimiento
+  consent_status: 'granted' | 'pending' | 'denied' | null;
+  consent_date: string | null;
+  
+  created_at: string;
+  updated_at: string;
+}
+
+// Interacciones con leads (emails, llamadas, etc.)
+export interface LeadInteraction {
+  id: string;
+  lead_id: string;
+  agent_id: string | null;
+  interaction_type: 'email_sent' | 'email_opened' | 'email_replied' | 'linkedin_message' | 'linkedin_view' | 'call_made' | 'call_received' | 'whatsapp_sent' | 'meeting_scheduled' | 'meeting_completed' | 'website_visit' | 'content_download';
+  content: string | null;
+  metadata: {
+    email_subject?: string;
+    email_body?: string;
+    call_duration?: number;
+    call_recording_url?: string;
+    meeting_link?: string;
+    page_visited?: string;
+    content_title?: string;
+  } | null;
+  sentiment: 'positive' | 'neutral' | 'negative' | null;
+  created_at: string;
+}
+
 export interface DashboardStats {
   activeClients: number;
   activeProjects: number;
@@ -250,6 +347,16 @@ export type Database = {
         Row: ChatSession;
         Insert: Omit<ChatSession, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string };
         Update: Partial<ChatSession>;
+      };
+      leads: {
+        Row: Lead;
+        Insert: Omit<Lead, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string };
+        Update: Partial<Lead>;
+      };
+      lead_interactions: {
+        Row: LeadInteraction;
+        Insert: Omit<LeadInteraction, 'id' | 'created_at'> & { id?: string; created_at?: string };
+        Update: Partial<LeadInteraction>;
       };
     };
   };
