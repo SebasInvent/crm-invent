@@ -13,9 +13,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { 
-  Plus, 
-  Search, 
+import { toast } from 'sonner'
+import { EmptyState } from '@/components/ui/empty-state'
+import {
+  Plus,
+  Search,
   Filter,
   Building2,
   Mail,
@@ -55,31 +57,47 @@ export default function ContactsPage() {
 
   async function fetchContacts() {
     setLoading(true)
-    
-    let query = supabase
-      .from('contacts_with_organization')
-      .select('*')
-      .order('created_at', { ascending: false })
-    
-    if (filterType !== 'all') {
-      query = query.eq('type', filterType)
+    try {
+      let query = supabase
+        .from('contacts_with_organization')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (filterType !== 'all') {
+        query = query.eq('type', filterType)
+      }
+
+      const { data, error } = await query
+      if (error) throw error
+
+      if (data) {
+        setContacts(data)
+      }
+    } catch (err) {
+      console.error('Error fetching contacts:', err)
+      toast.error('No se pudieron cargar los contactos', {
+        description: err instanceof Error ? err.message : 'Intenta de nuevo en unos segundos.',
+      })
+    } finally {
+      setLoading(false)
     }
-    
-    const { data } = await query
-    
-    if (data) {
-      setContacts(data)
-    }
-    
-    setLoading(false)
   }
 
   async function createContact() {
-    const { error } = await supabase
-      .from('contacts')
-      .insert(newContact as any)
-    
-    if (!error) {
+    if (!newContact.first_name.trim()) {
+      toast.error('El nombre es obligatorio')
+      return
+    }
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .insert(newContact as any)
+
+      if (error) throw error
+
+      toast.success('Contacto creado', {
+        description: `${newContact.first_name} ${newContact.last_name}`.trim(),
+      })
       setIsCreateDialogOpen(false)
       setNewContact({
         first_name: '',
@@ -92,6 +110,11 @@ export default function ContactsPage() {
         source: 'manual'
       })
       fetchContacts()
+    } catch (err) {
+      console.error('Error creating contact:', err)
+      toast.error('No se pudo crear el contacto', {
+        description: err instanceof Error ? err.message : 'Revisa los datos e intenta de nuevo.',
+      })
     }
   }
 
@@ -231,13 +254,26 @@ export default function ContactsPage() {
           {loading ? (
             <div className="p-8 text-center text-zinc-500">Cargando contactos...</div>
           ) : filteredContacts.length === 0 ? (
-            <div className="p-8 text-center">
-              <User className="h-12 w-12 text-zinc-600 mx-auto mb-4" />
-              <p className="text-zinc-500">No hay contactos registrados</p>
-              <p className="text-zinc-600 text-sm mt-1">
-                Comienza agregando tu primer contacto
-              </p>
-            </div>
+            <EmptyState
+              icon={User}
+              title={searchQuery || filterType !== 'all' ? 'Sin resultados' : 'Aún no tienes contactos'}
+              description={
+                searchQuery || filterType !== 'all'
+                  ? 'Prueba con otros términos o cambia el filtro de tipo.'
+                  : 'Crea tu primer contacto manualmente o conecta una integración para que entren solos.'
+              }
+              action={
+                !searchQuery && filterType === 'all' ? (
+                  <Button
+                    className="bg-white text-black hover:bg-zinc-200"
+                    onClick={() => setIsCreateDialogOpen(true)}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Nuevo contacto
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             <div className="divide-y divide-zinc-800">
               {filteredContacts.map((contact) => (

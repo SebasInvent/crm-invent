@@ -4,10 +4,11 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { getServiceRoleClient } from '@/lib/supabase'
 import { NewClientDialog } from '@/components/clients/NewClientDialog'
+import { EmptyState } from '@/components/ui/empty-state'
 
 export const dynamic = 'force-dynamic'
 
-import { Search, Mail, Phone, Building2 } from 'lucide-react'
+import { Search, Mail, Phone, Building2, Users } from 'lucide-react'
 
 async function getClients() {
   const supabase = getServiceRoleClient()
@@ -70,12 +71,12 @@ export default async function ClientsPage() {
         <CardContent>
           <div className="space-y-4">
             {clients.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-zinc-500">No hay clientes registrados</p>
-                <p className="text-zinc-600 text-sm mt-1">
-                  Comienza agregando tu primer cliente
-                </p>
-              </div>
+              <EmptyState
+                icon={Users}
+                title="Aún no tienes clientes"
+                description="Crea tu primer cliente o impórtalos desde un CSV. Cada vez que cierres un lead, aparecerá aquí."
+                action={<NewClientDialog />}
+              />
             ) : (
               clients.map((client: any) => (
                 <Link

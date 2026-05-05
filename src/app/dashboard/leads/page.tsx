@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { supabase } from '@/lib/supabase'
 import { LeadFilters } from '@/components/leads/LeadFilters'
+import { EmptyState } from '@/components/ui/empty-state'
 import {
   Users,
   Plus,
@@ -225,27 +226,27 @@ export default async function LeadsPage({
         </CardHeader>
         <CardContent>
           {leads.length === 0 ? (
-            <div className="text-center py-12">
-              <Target className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">No hay leads aún</h3>
-              <p className="text-muted-foreground mb-4">
-                Comienza agregando leads manualmente o usa el scraper para encontrar prospectos.
-              </p>
-              <div className="flex justify-center gap-2">
-                <Link href="/dashboard/leads/scrape">
-                  <Button variant="outline">
-                    <Globe className="h-4 w-4 mr-2" />
-                    Ir al Scraper
-                  </Button>
-                </Link>
-                <Link href="/dashboard/leads/new">
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Agregar Lead
-                  </Button>
-                </Link>
-              </div>
-            </div>
+            <EmptyState
+              icon={Target}
+              title="Aún no hay leads"
+              description="Comienza agregando leads manualmente o lanza el Scraper para encontrar prospectos automáticamente."
+              action={
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Link href="/dashboard/leads/scrape">
+                    <Button variant="outline">
+                      <Globe className="h-4 w-4 mr-2" />
+                      Ir al Scraper
+                    </Button>
+                  </Link>
+                  <Link href="/dashboard/leads/new">
+                    <Button>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Agregar Lead
+                    </Button>
+                  </Link>
+                </div>
+              }
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">

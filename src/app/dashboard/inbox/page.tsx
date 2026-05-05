@@ -20,6 +20,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { supabase } from '@/lib/supabase'
 import { format, isToday, isYesterday } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { toast } from 'sonner'
+import { EmptyState } from '@/components/ui/empty-state'
 import { 
   Search, 
   Send, 
@@ -105,31 +107,39 @@ function InboxContent() {
 
   async function fetchData() {
     setLoading(true)
-    
-    // Fetch conversations
-    const { data: conversationsData } = await supabase
-      .from('conversations_view')
-      .select('*')
-      .order('last_message_at', { ascending: false })
-      .limit(50)
-    
-    // Fetch channels
-    const { data: channelsData } = await supabase
-      .from('channels')
-      .select('*')
-      .eq('status', 'active')
-    
-    // Fetch templates
-    const { data: templatesData } = await supabase
-      .from('message_templates')
-      .select('*')
-      .eq('is_active', true)
-    
-    if (conversationsData) setConversations(conversationsData as Conversation[])
-    if (channelsData) setChannels(channelsData as Channel[])
-    if (templatesData) setTemplates(templatesData as MessageTemplate[])
-    
-    setLoading(false)
+    try {
+      // Run the three queries in parallel — they're independent
+      const [conversationsRes, channelsRes, templatesRes] = await Promise.all([
+        supabase
+          .from('conversations_view')
+          .select('*')
+          .order('last_message_at', { ascending: false })
+          .limit(50),
+        supabase
+          .from('channels')
+          .select('*')
+          .eq('status', 'active'),
+        supabase
+          .from('message_templates')
+          .select('*')
+          .eq('is_active', true),
+      ])
+
+      if (conversationsRes.error) throw conversationsRes.error
+      if (channelsRes.error) throw channelsRes.error
+      if (templatesRes.error) throw templatesRes.error
+
+      if (conversationsRes.data) setConversations(conversationsRes.data as Conversation[])
+      if (channelsRes.data) setChannels(channelsRes.data as Channel[])
+      if (templatesRes.data) setTemplates(templatesRes.data as MessageTemplate[])
+    } catch (err) {
+      console.error('Error fetching inbox:', err)
+      toast.error('No se pudo cargar la bandeja', {
+        description: err instanceof Error ? err.message : 'Reintentando…',
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function loadConversation(id: string) {
@@ -177,25 +187,32 @@ function InboxContent() {
 
   async function sendMessage() {
     if (!newMessage.trim() || !selectedConversation) return
-    
+
     const channel = channels.find(c => c.id === selectedConversation.channel_id)
-    
-    const { error } = await supabase
-      .from('unified_messages')
-      .insert({
-        conversation_id: selectedConversation.id,
-        channel_id: selectedConversation.channel_id,
-        channel_type: channel?.type || 'webchat',
-        contact_id: selectedConversation.contact_id,
-        direction: 'outbound',
-        message_type: 'text',
-        content: newMessage,
-        status: 'sent',
-        sent_at: new Date().toISOString()
-      } as any)
-    
-    if (!error) {
+    const text = newMessage
+
+    try {
+      const { error } = await supabase
+        .from('unified_messages')
+        .insert({
+          conversation_id: selectedConversation.id,
+          channel_id: selectedConversation.channel_id,
+          channel_type: channel?.type || 'webchat',
+          contact_id: selectedConversation.contact_id,
+          direction: 'outbound',
+          message_type: 'text',
+          content: text,
+          status: 'sent',
+          sent_at: new Date().toISOString()
+        } as any)
+
+      if (error) throw error
       setNewMessage('')
+    } catch (err) {
+      console.error('Error sending message:', err)
+      toast.error('No se pudo enviar el mensaje', {
+        description: err instanceof Error ? err.message : 'Tu mensaje quedó intacto, intenta de nuevo.',
+      })
     }
   }
 
@@ -309,10 +326,15 @@ function InboxContent() {
             {loading ? (
               <div className="p-4 text-center text-zinc-500">Cargando...</div>
             ) : filteredConversations.length === 0 ? (
-              <div className="p-8 text-center">
-                <MessageCircle className="h-12 w-12 text-zinc-600 mx-auto mb-4" />
-                <p className="text-zinc-500">No hay conversaciones</p>
-              </div>
+              <EmptyState
+                icon={MessageCircle}
+                title={searchQuery || activeFilter !== 'all' ? 'Sin resultados' : 'Sin conversaciones'}
+                description={
+                  searchQuery || activeFilter !== 'all'
+                    ? 'Prueba con otros términos o cambia de filtro.'
+                    : 'Cuando recibas un email, WhatsApp o mensaje desde un canal conectado, aparecerá aquí.'
+                }
+              />
             ) : (
               filteredConversations.map((conversation) => (
                 <button
@@ -533,11 +555,11 @@ function InboxContent() {
       ) : (
         // Empty state — only visible on desktop. On mobile we show the list instead.
         <Card className="hidden md:flex flex-1 items-center justify-center bg-zinc-950 border-zinc-800">
-          <div className="text-center">
-            <MessageCircle className="h-16 w-16 text-zinc-700 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-white mb-2">Selecciona una conversación</h3>
-            <p className="text-zinc-500">Elige una conversación de la lista para ver los mensajes</p>
-          </div>
+          <EmptyState
+            icon={MessageCircle}
+            title="Selecciona una conversación"
+            description="Elige una conversación de la lista para ver los mensajes y responder."
+          />
         </Card>
       )}
     </div>

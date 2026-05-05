@@ -12,6 +12,7 @@ import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea
 import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { toast } from 'sonner'
 import { 
   Plus, 
   Search, 
@@ -59,45 +60,57 @@ export default function PipelinePage() {
 
   async function fetchData() {
     setLoading(true)
-    
-    // Fetch stages
-    const { data: stagesData } = await supabase
-      .from('pipeline_stages')
-      .select('*')
-      .eq('is_active', true)
-      .order('order_index')
-    
-    // Fetch deals with contacts
-    const { data: dealsData } = await supabase
-      .from('deals_full')
-      .select('*')
-      .eq('status', 'open')
-      .order('updated_at', { ascending: false })
-    
-    // Fetch contacts for dropdown
-    const { data: contactsData } = await supabase
-      .from('contacts')
-      .select('id, first_name, last_name, email, company_name')
-      .eq('status', 'active')
-      .order('first_name')
-    
-    if (stagesData && dealsData) {
-      const columns: KanbanColumnData[] = (stagesData as PipelineStage[]).map(stage => ({
-        id: stage.id,
-        name: stage.name,
-        color: stage.color,
-        order_index: stage.order_index,
-        probability: stage.default_probability,
-        deals: (dealsData as Deal[]).filter(d => d.stage_id === stage.id) || []
-      }))
-      setStages(columns)
+    try {
+      // Run independent queries in parallel — much faster on first paint
+      const [stagesRes, dealsRes, contactsRes] = await Promise.all([
+        supabase
+          .from('pipeline_stages')
+          .select('*')
+          .eq('is_active', true)
+          .order('order_index'),
+        supabase
+          .from('deals_full')
+          .select('*')
+          .eq('status', 'open')
+          .order('updated_at', { ascending: false }),
+        supabase
+          .from('contacts')
+          .select('id, first_name, last_name, email, company_name')
+          .eq('status', 'active')
+          .order('first_name'),
+      ])
+
+      if (stagesRes.error) throw stagesRes.error
+      if (dealsRes.error) throw dealsRes.error
+      if (contactsRes.error) throw contactsRes.error
+
+      const stagesData = stagesRes.data
+      const dealsData = dealsRes.data
+      const contactsData = contactsRes.data
+
+      if (stagesData && dealsData) {
+        const columns: KanbanColumnData[] = (stagesData as PipelineStage[]).map(stage => ({
+          id: stage.id,
+          name: stage.name,
+          color: stage.color,
+          order_index: stage.order_index,
+          probability: stage.default_probability,
+          deals: (dealsData as Deal[]).filter(d => d.stage_id === stage.id) || []
+        }))
+        setStages(columns)
+      }
+
+      if (contactsData) {
+        setContacts(contactsData)
+      }
+    } catch (err) {
+      console.error('Error fetching pipeline:', err)
+      toast.error('No se pudo cargar el pipeline', {
+        description: err instanceof Error ? err.message : 'Reintenta en unos segundos.',
+      })
+    } finally {
+      setLoading(false)
     }
-    
-    if (contactsData) {
-      setContacts(contactsData)
-    }
-    
-    setLoading(false)
   }
 
   async function handleDragEnd(result: DropResult) {
@@ -131,39 +144,59 @@ export default function PipelinePage() {
     // Update in database
     const { error } = await (supabase
       .from('deals')
-      .update({ 
+      .update({
         stage_id: destination.droppableId,
         probability: destStage.default_probability,
         updated_at: new Date().toISOString()
       })
       .eq('id', draggableId) as any)
-    
+
     if (error) {
       console.error('Error moving deal:', error)
+      toast.error('No se pudo mover el deal', {
+        description: error.message || 'Devolviéndolo a su columna original…',
+      })
       fetchData() // Revert on error
+    } else {
+      toast.success(`Movido a "${destStage.name}"`, {
+        description: `${deal.name} • ${destStage.probability}% probabilidad`,
+      })
     }
   }
 
   async function createDeal() {
+    if (!newDeal.name.trim() || !newDeal.contact_id || !newDeal.stage_id) {
+      toast.error('Completa los campos obligatorios')
+      return
+    }
     const stage = stages.find(s => s.id === newDeal.stage_id)
-    
-    const { error } = await supabase
-      .from('deals')
-      .insert({
-        name: newDeal.name,
-        contact_id: newDeal.contact_id,
-        value: parseFloat(newDeal.value) || 0,
-        stage_id: newDeal.stage_id,
-        expected_close_date: newDeal.expected_close_date,
-        description: newDeal.description,
-        probability: stage?.default_probability || 0,
-        status: 'open'
-      } as any)
-    
-    if (!error) {
+    try {
+      const { error } = await supabase
+        .from('deals')
+        .insert({
+          name: newDeal.name,
+          contact_id: newDeal.contact_id,
+          value: parseFloat(newDeal.value) || 0,
+          stage_id: newDeal.stage_id,
+          expected_close_date: newDeal.expected_close_date || null,
+          description: newDeal.description,
+          probability: stage?.default_probability || 0,
+          status: 'open'
+        } as any)
+
+      if (error) throw error
+
+      toast.success('Deal creado', {
+        description: `${newDeal.name} en "${stage?.name}"`,
+      })
       setIsCreateDialogOpen(false)
       setNewDeal({ name: '', contact_id: '', value: '', stage_id: '', expected_close_date: '', description: '' })
       fetchData()
+    } catch (err) {
+      console.error('Error creating deal:', err)
+      toast.error('No se pudo crear el deal', {
+        description: err instanceof Error ? err.message : 'Revisa los datos e intenta de nuevo.',
+      })
     }
   }
 

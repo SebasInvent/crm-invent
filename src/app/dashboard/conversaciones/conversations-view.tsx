@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { getAuthClient } from '@/lib/supabase-auth'
 import { Send, Bot, User, Pause, Play, Phone, Search, MessageCircle, Sparkles, CheckCircle2, Loader2, RefreshCw, Wifi, WifiOff, ChevronLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { toast } from 'sonner'
+import { EmptyState } from '@/components/ui/empty-state'
 
 type Thread = {
   id: string
@@ -62,13 +64,22 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
   const loadMessages = useCallback(
     async (threadId: string) => {
       setLoadingMessages(true)
-      const { data } = await supabase
-        .from('chat_messages')
-        .select('*')
-        .eq('thread_id', threadId)
-        .order('created_at', { ascending: true })
-      setMessages((data as Message[]) || [])
-      setLoadingMessages(false)
+      try {
+        const { data, error } = await supabase
+          .from('chat_messages')
+          .select('*')
+          .eq('thread_id', threadId)
+          .order('created_at', { ascending: true })
+        if (error) throw error
+        setMessages((data as Message[]) || [])
+      } catch (err) {
+        console.error('Error loading messages:', err)
+        toast.error('No se pudieron cargar los mensajes', {
+          description: err instanceof Error ? err.message : 'Intenta seleccionar el chat de nuevo.',
+        })
+      } finally {
+        setLoadingMessages(false)
+      }
     },
     [supabase]
   )
@@ -86,12 +97,18 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
   const refreshThreads = useCallback(async () => {
     setRefreshing(true)
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('chat_threads')
         .select('*')
         .order('last_message_at', { ascending: false })
         .limit(100)
+      if (error) throw error
       if (data) setThreads(data as Thread[])
+    } catch (err) {
+      console.error('Error refreshing threads:', err)
+      toast.error('No se pudieron actualizar las conversaciones', {
+        description: err instanceof Error ? err.message : 'Verifica tu conexión.',
+      })
     } finally {
       setRefreshing(false)
     }
@@ -190,11 +207,14 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: activeThread.phone, text, threadId: activeThread.id }),
       })
-      if (!res.ok) throw new Error('Failed')
-    } catch {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    } catch (err) {
+      // Rollback optimistic update + restore draft so user doesn't lose what they typed
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id))
       setDraft(text)
-      alert('Error enviando mensaje')
+      toast.error('No se pudo enviar el mensaje', {
+        description: err instanceof Error ? err.message : 'Tu texto quedó intacto, intenta de nuevo.',
+      })
     } finally {
       setSending(false)
     }
@@ -203,26 +223,58 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
   async function toggleBot() {
     if (!activeThread) return
     const newState = !activeThread.bot_active
+    const prevState = activeThread.bot_active
     setThreads((prev) =>
       prev.map((t) => (t.id === activeThread.id ? { ...t, bot_active: newState } : t))
     )
-    await fetch('/api/whatsapp/send', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threadId: activeThread.id, bot_active: newState }),
-    })
+    try {
+      const res = await fetch('/api/whatsapp/send', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId: activeThread.id, bot_active: newState }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      toast.success(newState ? 'Bot reanudado' : 'Bot pausado', {
+        description: newState
+          ? 'El bot volverá a responder automáticamente.'
+          : 'Tú estás respondiendo este chat.',
+      })
+    } catch (err) {
+      // Rollback
+      setThreads((prev) =>
+        prev.map((t) => (t.id === activeThread.id ? { ...t, bot_active: prevState } : t))
+      )
+      toast.error('No se pudo cambiar el estado del bot', {
+        description: err instanceof Error ? err.message : 'Intenta de nuevo.',
+      })
+    }
   }
 
   async function changeStatus(newStatus: string) {
     if (!activeThread) return
+    const prevStatus = activeThread.status
     setThreads((prev) =>
       prev.map((t) => (t.id === activeThread.id ? { ...t, status: newStatus } : t))
     )
-    await fetch('/api/whatsapp/send', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threadId: activeThread.id, status: newStatus }),
-    })
+    try {
+      const res = await fetch('/api/whatsapp/send', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId: activeThread.id, status: newStatus }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      toast.success('Estado actualizado', {
+        description: `Marcado como ${STATUS_LABELS[newStatus] || newStatus}.`,
+      })
+    } catch (err) {
+      // Rollback
+      setThreads((prev) =>
+        prev.map((t) => (t.id === activeThread.id ? { ...t, status: prevStatus } : t))
+      )
+      toast.error('No se pudo actualizar el estado', {
+        description: err instanceof Error ? err.message : 'Intenta de nuevo.',
+      })
+    }
   }
 
   const filteredThreads = threads.filter((t) => {
@@ -320,12 +372,15 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
         </div>
         <div className="flex-1 overflow-y-auto">
           {filteredThreads.length === 0 ? (
-            <div className="p-8 text-center text-zinc-600 text-sm">
-              <MessageCircle className="h-8 w-8 mx-auto mb-3 text-zinc-700" />
-              {threads.length === 0
-                ? 'Aún no hay conversaciones. Lanza el Prospector y aparecerán aquí.'
-                : 'Sin resultados'}
-            </div>
+            <EmptyState
+              icon={MessageCircle}
+              title={threads.length === 0 ? 'Aún no hay conversaciones' : 'Sin resultados'}
+              description={
+                threads.length === 0
+                  ? 'Lanza el Prospector o conecta WhatsApp y las conversaciones empezarán a aparecer aquí.'
+                  : 'Prueba con otro nombre, teléfono o palabra clave.'
+              }
+            />
           ) : (
             filteredThreads.map((t) => (
               <button
@@ -372,8 +427,12 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
         }`}
       >
         {!activeThread ? (
-          <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm">
-            Selecciona una conversación
+          <div className="flex-1 flex items-center justify-center">
+            <EmptyState
+              icon={MessageCircle}
+              title="Selecciona una conversación"
+              description="Elige un chat de la lista para ver el historial y responder."
+            />
           </div>
         ) : (
           <>
