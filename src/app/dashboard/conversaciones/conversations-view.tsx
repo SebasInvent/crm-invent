@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { getAuthClient } from '@/lib/supabase-auth'
-import { Send, Bot, User, Pause, Play, Phone, Search, MessageCircle, Sparkles, CheckCircle2, Loader2, RefreshCw, Wifi, WifiOff } from 'lucide-react'
+import { Send, Bot, User, Pause, Play, Phone, Search, MessageCircle, Sparkles, CheckCircle2, Loader2, RefreshCw, Wifi, WifiOff, ChevronLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Thread = {
@@ -237,8 +237,14 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
 
   return (
     <div className="h-[calc(100vh-4rem)] -m-8 flex bg-black text-white">
-      {/* COLUMNA IZQUIERDA: Lista de threads */}
-      <aside className="w-80 border-r border-zinc-900 flex flex-col">
+      {/* COLUMNA IZQUIERDA: Lista de threads
+          Mobile: full-width, hidden when a thread is active.
+          Desktop: fixed 320px column, always visible. */}
+      <aside
+        className={`w-full md:w-80 border-r border-zinc-900 flex-col flex-shrink-0 ${
+          activeThreadId ? 'hidden md:flex' : 'flex'
+        }`}
+      >
         <div className="p-4 border-b border-zinc-900">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -357,8 +363,14 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
         </div>
       </aside>
 
-      {/* COLUMNA CENTRAL: Chat */}
-      <main className="flex-1 flex flex-col min-w-0">
+      {/* COLUMNA CENTRAL: Chat
+          Mobile: only visible when a thread is selected (with back button)
+          Desktop: always rendered */}
+      <main
+        className={`flex-1 flex-col min-w-0 ${
+          activeThreadId ? 'flex' : 'hidden md:flex'
+        }`}
+      >
         {!activeThread ? (
           <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm">
             Selecciona una conversación
@@ -366,13 +378,22 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
         ) : (
           <>
             {/* Header */}
-            <header className="h-16 border-b border-zinc-900 flex items-center justify-between px-6">
-              <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-full bg-zinc-900 flex items-center justify-center">
+            <header className="h-16 border-b border-zinc-900 flex items-center justify-between px-3 md:px-6 gap-2">
+              <div className="flex items-center gap-2 md:gap-3 min-w-0">
+                {/* Back button — mobile only */}
+                <button
+                  type="button"
+                  onClick={() => setActiveThreadId(null)}
+                  className="md:hidden h-9 w-9 inline-flex items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-900 hover:text-white shrink-0"
+                  aria-label="Volver a la lista"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <div className="h-9 w-9 rounded-full bg-zinc-900 flex items-center justify-center shrink-0">
                   <Phone className="h-4 w-4 text-zinc-400" />
                 </div>
-                <div>
-                  <div className="text-sm font-semibold">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold truncate">
                     {activeThread.contact_name || `+${activeThread.phone}`}
                   </div>
                   <div className="text-xs text-zinc-500">
@@ -459,9 +480,11 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
         )}
       </main>
 
-      {/* COLUMNA DERECHA: Detalles */}
+      {/* COLUMNA DERECHA: Detalles
+          Hidden on mobile (saves space — chat is the priority).
+          Visible on lg+ when there's an active thread. */}
       {activeThread && (
-        <aside className="w-72 border-l border-zinc-900 flex flex-col overflow-y-auto">
+        <aside className="hidden lg:flex w-72 border-l border-zinc-900 flex-col overflow-y-auto">
           <div className="p-5 border-b border-zinc-900">
             <div className="text-xs text-zinc-500 mb-1">Contacto</div>
             <div className="font-semibold text-sm mb-3">
@@ -472,7 +495,7 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
 
           <div className="p-5 border-b border-zinc-900">
             <div className="text-xs text-zinc-500 mb-3">Estado</div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
               {Object.entries(STATUS_LABELS).map(([key, label]) => (
                 <button
                   key={key}

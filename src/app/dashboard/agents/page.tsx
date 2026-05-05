@@ -107,7 +107,7 @@ async function AgentCard({ agent }: { agent: any }) {
           )}
         </div>
 
-        <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-3 gap-4 text-center">
+        <div className="mt-4 pt-4 border-t border-zinc-800 grid grid-cols-3 gap-2 md:gap-4 text-center">
           <div><p className="text-lg font-semibold text-white">{stats.total}</p><p className="text-xs text-zinc-500">Tareas</p></div>
           <div><p className="text-lg font-semibold text-green-400">{stats.completed}</p><p className="text-xs text-zinc-500">Completadas</p></div>
           <div><p className="text-lg font-semibold text-yellow-400">{stats.inProgress}</p><p className="text-xs text-zinc-500">En Progreso</p></div>

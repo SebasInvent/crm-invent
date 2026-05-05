@@ -338,7 +338,7 @@ export default function ContactsPage() {
             <DialogTitle>Crear Nuevo Contacto</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm text-zinc-400 mb-1 block">Nombre *</label>
                 <Input
@@ -385,7 +385,7 @@ export default function ContactsPage() {
               />
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm text-zinc-400 mb-1 block">Tipo</label>
                 <Select 

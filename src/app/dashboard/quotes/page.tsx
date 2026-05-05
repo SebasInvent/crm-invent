@@ -398,8 +398,8 @@ export default function QuotesPage() {
 
             {/* Líneas de cotización */}
             {lineItems.length > 0 && (
-              <div className="border border-zinc-800 rounded-lg overflow-hidden">
-                <table className="w-full">
+              <div className="border border-zinc-800 rounded-lg overflow-x-auto">
+                <table className="w-full min-w-[640px]">
                   <thead className="bg-zinc-900">
                     <tr>
                       <th className="text-left p-3 text-zinc-400 text-sm">Descripción</th>

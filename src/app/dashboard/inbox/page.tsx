@@ -233,10 +233,21 @@ function InboxContent() {
     return <Icon className="h-4 w-4" />
   }
 
+  // On mobile we use an iOS-style master/detail pattern:
+  //  - When no conversation is selected, only the list is visible
+  //  - When one is selected, only the chat is visible (with a back button)
+  // On md+ both panels are visible side-by-side as before.
+  const showListMobile = !selectedConversation
+  const showChatMobile = !!selectedConversation
+
   return (
     <div className="h-[calc(100vh-7rem)] flex gap-4">
       {/* Conversations Sidebar */}
-      <Card className="w-96 flex flex-col bg-zinc-950 border-zinc-800 flex-shrink-0">
+      <Card
+        className={`w-full md:w-96 md:flex flex-col bg-zinc-950 border-zinc-800 flex-shrink-0 ${
+          showListMobile ? 'flex' : 'hidden'
+        }`}
+      >
         <CardHeader className="p-4 pb-2 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-white">Bandeja de Entrada</h2>
@@ -357,17 +368,25 @@ function InboxContent() {
         </ScrollArea>
       </Card>
       
-      {/* Chat Area */}
+      {/* Chat Area
+          Mobile: visible only when a conversation is selected (showChatMobile)
+          Desktop: always rendered (when there's a selectedConversation), or
+          empty-state when none */}
       {selectedConversation ? (
-        <Card className="flex-1 flex flex-col bg-zinc-950 border-zinc-800">
+        <Card
+          className={`flex-1 flex-col bg-zinc-950 border-zinc-800 ${
+            showChatMobile ? 'flex' : 'hidden md:flex'
+          }`}
+        >
           {/* Chat Header */}
           <CardHeader className="p-4 border-b border-zinc-800 flex flex-row items-center justify-between">
             <div className="flex items-center gap-3">
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="md:hidden h-8 w-8 text-zinc-400"
-                onClick={() => router.push('/dashboard/inbox')}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden h-9 w-9 text-zinc-400"
+                onClick={() => setSelectedConversation(null)}
+                aria-label="Volver a conversaciones"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -512,7 +531,8 @@ function InboxContent() {
           </div>
         </Card>
       ) : (
-        <Card className="flex-1 flex items-center justify-center bg-zinc-950 border-zinc-800">
+        // Empty state — only visible on desktop. On mobile we show the list instead.
+        <Card className="hidden md:flex flex-1 items-center justify-center bg-zinc-950 border-zinc-800">
           <div className="text-center">
             <MessageCircle className="h-16 w-16 text-zinc-700 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-white mb-2">Selecciona una conversación</h3>

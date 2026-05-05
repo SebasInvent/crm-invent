@@ -276,11 +276,17 @@ export default function PipelinePage() {
         </div>
       ) : (
         <DragDropContext onDragEnd={handleDragEnd}>
-          <div className="flex gap-4 overflow-x-auto pb-4">
+          {/* Mobile hint: tells the user the kanban scrolls horizontally
+              (otherwise users see only 1 column and assume that's all). */}
+          <p className="md:hidden text-xs text-zinc-500 mb-2 flex items-center gap-1">
+            <span>← Desliza →</span>
+            <span className="text-zinc-700">para ver más etapas</span>
+          </p>
+          <div className="flex gap-3 md:gap-4 overflow-x-auto pb-4 -mx-4 px-4 md:mx-0 md:px-0 snap-x snap-mandatory md:snap-none">
             {filteredStages.map((stage) => (
-              <div 
-                key={stage.id} 
-                className="flex-shrink-0 w-80"
+              <div
+                key={stage.id}
+                className="flex-shrink-0 w-[85vw] sm:w-72 md:w-80 snap-start"
               >
                 <Card className="bg-zinc-950 border-zinc-800">
                   <CardHeader className="p-3 pb-2">
@@ -417,7 +423,7 @@ export default function PipelinePage() {
               </Select>
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm text-zinc-400 mb-1 block">Valor ($)</label>
                 <Input
