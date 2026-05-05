@@ -1,0 +1,196 @@
+{
+  "_comment": "n8n nodes for Aria's CRM action tools. Open the Aria workflow → empty area → Ctrl+V (or right-click → Paste) → 6 nodes appear → drag each one's tool output to your AI Agent's `Tool` input. ARIA_ACTION_TOKEN must be set as a workflow env var or n8n env var.",
+  "nodes": [
+    {
+      "parameters": {
+        "toolDescription": "Search the CRM for contacts, leads, or deals by name, email, phone, or company. Use when the user asks 'do we have a lead/contact for...?' or 'find me X'. Returns up to 10 matches per entity. Always call this BEFORE update_lead or move_deal so you can resolve names to ids.",
+        "method": "GET",
+        "url": "https://crm-invent.vercel.app/api/aria/actions/search",
+        "authentication": "none",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.ARIA_ACTION_TOKEN }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $fromAI('query', 'Search term — name, email, phone, or company', 'string') }}"
+            },
+            {
+              "name": "entity",
+              "value": "={{ $fromAI('entity', 'One of: contact, lead, deal, or all. Default to all if unsure.', 'string', 'all') }}"
+            },
+            {
+              "name": "limit",
+              "value": "={{ $fromAI('limit', 'Max matches per entity, 1..20', 'number', 8) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aria-tool-search-crm",
+      "name": "Search CRM",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [600, 100]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Get a high-level snapshot of the CRM: leads by status, follow-ups due in the next 7 days, open deals (count + total value + weighted value), contacts by type, chat-thread activity. Use when the user asks 'how is the pipeline?', 'cuántos leads hot tengo?', 'qué follow-ups vienen esta semana?'.",
+        "method": "GET",
+        "url": "https://crm-invent.vercel.app/api/aria/actions/stats",
+        "authentication": "none",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.ARIA_ACTION_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aria-tool-crm-stats",
+      "name": "CRM Stats",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [600, 280]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Create a new contact in the CRM. Use when the user says things like 'agrega a Juan Pérez de Empresa X' or 'guarda este contacto'. Only first_name is strictly required — pass other fields when you have them. Type defaults to 'lead', source to 'manual'.",
+        "method": "POST",
+        "url": "https://crm-invent.vercel.app/api/aria/actions/contacts/create",
+        "authentication": "none",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.ARIA_ACTION_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"first_name\": {{ JSON.stringify($fromAI('first_name', 'Contact first name (required)', 'string')) }},\n  \"last_name\": {{ JSON.stringify($fromAI('last_name', 'Contact last name', 'string', '')) }},\n  \"email\": {{ JSON.stringify($fromAI('email', 'Contact email (optional)', 'string', '')) || 'null' }},\n  \"phone\": {{ JSON.stringify($fromAI('phone', 'Contact phone (optional)', 'string', '')) || 'null' }},\n  \"company_name\": {{ JSON.stringify($fromAI('company_name', 'Company (optional)', 'string', '')) || 'null' }},\n  \"job_title\": {{ JSON.stringify($fromAI('job_title', 'Job title (optional)', 'string', '')) || 'null' }},\n  \"type\": {{ JSON.stringify($fromAI('type', 'lead | prospect | customer | partner | supplier (default lead)', 'string', 'lead')) }},\n  \"source\": {{ JSON.stringify($fromAI('source', 'manual | web_form | telegram | openclaw | referral | linkedin (default manual)', 'string', 'manual')) }}\n}",
+        "options": {}
+      },
+      "id": "aria-tool-create-contact",
+      "name": "Create Contact",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [600, 460]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Create a new lead with full lead-scoring info. Use when the user describes a new prospect from a conversation, social signal, or scrape. Only `name` is required. Pass `lead_status` (warm by default), `lead_score` (0-100, default 50), `priority`, and `jung_archetype` when you can infer them.",
+        "method": "POST",
+        "url": "https://crm-invent.vercel.app/api/aria/actions/leads/create",
+        "authentication": "none",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.ARIA_ACTION_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"name\": {{ JSON.stringify($fromAI('name', 'Lead full name (required)', 'string')) }},\n  \"email\": {{ JSON.stringify($fromAI('email', 'Lead email (optional)', 'string', '')) || 'null' }},\n  \"phone\": {{ JSON.stringify($fromAI('phone', 'Lead phone (optional)', 'string', '')) || 'null' }},\n  \"company\": {{ JSON.stringify($fromAI('company', 'Lead company (optional)', 'string', '')) || 'null' }},\n  \"industry\": {{ JSON.stringify($fromAI('industry', 'Industry (optional)', 'string', '')) || 'null' }},\n  \"jung_archetype\": {{ JSON.stringify($fromAI('jung_archetype', 'One of: hero_entrepreneur | sage_conservative | caregiver_stressed | artist_specialist | ruler_executive | explorer_merchant', 'string', '')) || 'null' }},\n  \"lead_status\": {{ JSON.stringify($fromAI('lead_status', 'hot | warm | cold | dead | converted (default warm)', 'string', 'warm')) }},\n  \"lead_score\": {{ $fromAI('lead_score', 'Score 0-100 (default 50)', 'number', 50) }},\n  \"priority\": {{ JSON.stringify($fromAI('priority', 'critical | high | medium | low (default medium)', 'string', 'medium')) }}\n}",
+        "options": {}
+      },
+      "id": "aria-tool-create-lead",
+      "name": "Create Lead",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Update an existing lead's status, score, priority, archetype, follow-up date, or notes. The `id` field is REQUIRED — call Search CRM first to find it. At least one other field must be passed. Use when the user says 'sube el score de X', 'márcalo como hot', 'agéndale follow-up para mañana'.",
+        "method": "PATCH",
+        "url": "https://crm-invent.vercel.app/api/aria/actions/leads/update",
+        "authentication": "none",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.ARIA_ACTION_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"id\": {{ JSON.stringify($fromAI('id', 'Lead UUID — get it from Search CRM first', 'string')) }},\n  \"lead_status\": {{ JSON.stringify($fromAI('lead_status', 'hot | warm | cold | dead | converted (omit if not changing)', 'string', '')) || 'null' }},\n  \"lead_score\": {{ $fromAI('lead_score', 'New score 0-100 (omit if not changing)', 'number', 0) || 'null' }},\n  \"priority\": {{ JSON.stringify($fromAI('priority', 'critical | high | medium | low (omit if not changing)', 'string', '')) || 'null' }},\n  \"jung_archetype\": {{ JSON.stringify($fromAI('jung_archetype', 'Archetype enum (omit if not changing)', 'string', '')) || 'null' }},\n  \"next_follow_up_date\": {{ JSON.stringify($fromAI('next_follow_up_date', 'ISO 8601 timestamp (omit if not setting)', 'string', '')) || 'null' }},\n  \"notes\": {{ JSON.stringify($fromAI('notes', 'Free-form notes (omit if not changing)', 'string', '')) || 'null' }}\n}",
+        "options": {}
+      },
+      "id": "aria-tool-update-lead",
+      "name": "Update Lead",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [900, 280]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Move a deal to a different pipeline stage. Pass `deal_id` (use Search CRM to find it) and EITHER `stage_id` (UUID) or `stage_name` (case-insensitive fuzzy match like 'Negociación'). Probability is set to the stage's default unless overridden.",
+        "method": "POST",
+        "url": "https://crm-invent.vercel.app/api/aria/actions/deals/move",
+        "authentication": "none",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.ARIA_ACTION_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"deal_id\": {{ JSON.stringify($fromAI('deal_id', 'Deal UUID — get from Search CRM first', 'string')) }},\n  \"stage_name\": {{ JSON.stringify($fromAI('stage_name', 'Stage name to move to (e.g. Negociación, Propuesta, Cerrado)', 'string', '')) || 'null' }},\n  \"probability\": {{ $fromAI('probability', 'Override probability 0-100 (optional, leave 0 to use stage default)', 'number', 0) || 'null' }}\n}",
+        "options": {}
+      },
+      "id": "aria-tool-move-deal",
+      "name": "Move Deal",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [900, 460]
+    }
+  ],
+  "connections": {}
+}
