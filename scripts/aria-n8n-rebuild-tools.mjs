@@ -43,11 +43,21 @@ const headers = { 'X-N8N-API-KEY': N8N_API_KEY, 'Content-Type': 'application/jso
 //   - For tools with NO inputs (CRM Stats), we add a single dummy
 //     placeholder so the auto-generated schema is sane.
 
+// `valueProvider: 'fieldValue'` tells n8n's toolHttpRequest to USE THE
+// LITERAL VALUE rather than expose this header as a parameter for the
+// LLM to fill. Without it, the LLM sees `Authorization` as a parameter
+// it should generate and produces placeholders like "Bearer
+// YOUR_AUTH_TOKEN" — the real token from $env never reaches the request.
 const AUTH_HEADER = {
   name: 'Authorization',
+  valueProvider: 'fieldValue',
   value: '=Bearer {{ $env.ARIA_ACTION_TOKEN }}',
 }
-const CT_HEADER = { name: 'Content-Type', value: 'application/json' }
+const CT_HEADER = {
+  name: 'Content-Type',
+  valueProvider: 'fieldValue',
+  value: 'application/json',
+}
 
 const TOOL_DEFS = {
   'Search CRM': {
