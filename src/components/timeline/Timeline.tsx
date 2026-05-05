@@ -24,7 +24,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 type TimelineEvent = {
   id: string
   type: string
-  source: 'activity' | 'chat' | 'email' | 'deal'
+  source: 'activity' | 'chat' | 'email' | 'deal' | 'note'
   timestamp: string
   title: string
   description?: string | null
@@ -177,6 +177,7 @@ function iconFor(event: TimelineEvent): {
     chat: { border: 'border-emerald-500/40', text: 'text-emerald-400' },
     email: { border: 'border-orange-500/40', text: 'text-orange-400' },
     deal: { border: 'border-fuchsia-500/40', text: 'text-fuchsia-400' },
+    note: { border: 'border-zinc-500/40', text: 'text-zinc-300' },
   } as const
 
   // Then map by type for the icon

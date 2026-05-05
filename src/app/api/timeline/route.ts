@@ -36,7 +36,7 @@ const querySchema = z
 type TimelineEvent = {
   id: string
   type: string
-  source: 'activity' | 'chat' | 'email' | 'deal'
+  source: 'activity' | 'chat' | 'email' | 'deal' | 'note'
   timestamp: string
   title: string
   description?: string | null
@@ -183,6 +183,31 @@ export async function GET(request: Request) {
             metadata: { deal_id: d.id, status: d.status, stage_id: d.stage_id },
           })
         }
+      })
+    }
+
+    // ─── 5. notes (added in Sprint 6A) — first-class events
+    {
+      let notesQuery = supabase
+        .from('notes')
+        .select('id, body, author_email, created_at')
+        .order('created_at', { ascending: false })
+        .limit(parsed.limit)
+      if (parsed.contact_id) notesQuery = notesQuery.eq('contact_id', parsed.contact_id)
+      else if (parsed.lead_id) notesQuery = notesQuery.eq('lead_id', parsed.lead_id)
+      else notesQuery = notesQuery.eq('contact_id', '00000000-0000-0000-0000-000000000000') // never matches
+
+      const { data: notes } = await notesQuery
+      ;(notes || []).forEach((n: any) => {
+        events.push({
+          id: `note-${n.id}`,
+          type: 'note',
+          source: 'note',
+          timestamp: n.created_at,
+          title: n.author_email ? `Nota — ${n.author_email}` : 'Nota',
+          description: n.body,
+          metadata: { note_id: n.id },
+        })
       })
     }
 

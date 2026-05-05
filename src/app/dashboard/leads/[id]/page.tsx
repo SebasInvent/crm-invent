@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { getServiceRoleClient } from '@/lib/supabase'
 import { Timeline } from '@/components/timeline/Timeline'
+import { Notes } from '@/components/notes/Notes'
 import {
   ArrowLeft,
   Mail,
@@ -181,12 +182,21 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
           )}
         </div>
 
-        {/* Timeline */}
-        <div>
-          <h2 className="text-sm font-medium text-zinc-400 mb-4 uppercase tracking-wider">
-            Actividad
-          </h2>
-          <Timeline leadId={params.id} />
+        {/* Right column: Notes + Timeline */}
+        <div className="space-y-8 min-w-0">
+          <section>
+            <h2 className="text-sm font-medium text-zinc-400 mb-4 uppercase tracking-wider">
+              Notas
+            </h2>
+            <Notes leadId={params.id} />
+          </section>
+
+          <section>
+            <h2 className="text-sm font-medium text-zinc-400 mb-4 uppercase tracking-wider">
+              Actividad
+            </h2>
+            <Timeline leadId={params.id} />
+          </section>
         </div>
       </div>
     </div>
