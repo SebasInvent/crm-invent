@@ -1,12 +1,18 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { getAuthClient } from '@/lib/supabase-auth'
 import { Send, Bot, User, Pause, Play, Phone, Search, MessageCircle, Sparkles, CheckCircle2, Loader2, RefreshCw, Wifi, WifiOff, ChevronLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { EmptyState } from '@/components/ui/empty-state'
+import {
+  useSupabaseQuery,
+  useSupabaseMutation,
+  queryKeys,
+} from '@/lib/hooks/useSupabaseQuery'
 
 type Thread = {
   id: string
@@ -45,82 +51,52 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function ConversationsView({ initialThreads }: { initialThreads: Thread[] }) {
   const router = useRouter()
-  const [threads, setThreads] = useState<Thread[]>(initialThreads)
+  const queryClient = useQueryClient()
   const [activeThreadId, setActiveThreadId] = useState<string | null>(initialThreads[0]?.id || null)
-  const [messages, setMessages] = useState<Message[]>([])
   const [draft, setDraft] = useState('')
   const [search, setSearch] = useState('')
-  const [sending, setSending] = useState(false)
-  const [loadingMessages, setLoadingMessages] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
   const [realtimeStatus, setRealtimeStatus] = useState<'connecting' | 'live' | 'offline'>('connecting')
   const [unreadCount, setUnreadCount] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const supabase = getAuthClient()
+  const supabase = useMemo(() => getAuthClient(), [])
+
+  // ─── Threads list. Hydrates with `initialThreads` from server (instant
+  //     paint) and React Query keeps it fresh in the background.
+  const { data: threads = [], isFetching: refreshing, refetch: refetchThreads } =
+    useSupabaseQuery<Thread[]>({
+      queryKey: queryKeys.conversaciones.threads,
+      queryFn: () =>
+        supabase
+          .from('chat_threads')
+          .select('*')
+          .order('last_message_at', { ascending: false })
+          .limit(100) as unknown as Promise<{ data: Thread[] | null; error: { message: string } | null }>,
+      initialData: initialThreads,
+    })
 
   const activeThread = threads.find((t) => t.id === activeThreadId) || null
 
-  // Cargar mensajes cuando se selecciona un thread
-  const loadMessages = useCallback(
-    async (threadId: string) => {
-      setLoadingMessages(true)
-      try {
-        const { data, error } = await supabase
-          .from('chat_messages')
-          .select('*')
-          .eq('thread_id', threadId)
-          .order('created_at', { ascending: true })
-        if (error) throw error
-        setMessages((data as Message[]) || [])
-      } catch (err) {
-        console.error('Error loading messages:', err)
-        toast.error('No se pudieron cargar los mensajes', {
-          description: err instanceof Error ? err.message : 'Intenta seleccionar el chat de nuevo.',
-        })
-      } finally {
-        setLoadingMessages(false)
-      }
-    },
-    [supabase]
-  )
-
-  useEffect(() => {
-    if (activeThreadId) loadMessages(activeThreadId)
-  }, [activeThreadId, loadMessages])
+  // ─── Messages for the active thread. Disabled when no thread selected.
+  const { data: messages = [], isLoading: loadingMessages } = useSupabaseQuery<Message[]>({
+    queryKey: activeThreadId
+      ? queryKeys.conversaciones.messages(activeThreadId)
+      : ['conversaciones', 'messages', 'none'],
+    queryFn: () =>
+      supabase
+        .from('chat_messages')
+        .select('*')
+        .eq('thread_id', activeThreadId!)
+        .order('created_at', { ascending: true }) as unknown as Promise<{ data: Message[] | null; error: { message: string } | null }>,
+    enabled: !!activeThreadId,
+  })
 
   // Auto-scroll al fondo cuando llegan mensajes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Cliente refetch de threads (fallback si server initial no trae todo / RLS bloquea)
-  const refreshThreads = useCallback(async () => {
-    setRefreshing(true)
-    try {
-      const { data, error } = await supabase
-        .from('chat_threads')
-        .select('*')
-        .order('last_message_at', { ascending: false })
-        .limit(100)
-      if (error) throw error
-      if (data) setThreads(data as Thread[])
-    } catch (err) {
-      console.error('Error refreshing threads:', err)
-      toast.error('No se pudieron actualizar las conversaciones', {
-        description: err instanceof Error ? err.message : 'Verifica tu conexión.',
-      })
-    } finally {
-      setRefreshing(false)
-    }
-  }, [supabase])
-
-  // Refetch on mount (asegura datos frescos sin recargar página)
-  useEffect(() => {
-    refreshThreads()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Realtime: suscripción a chat_messages y chat_threads
+  // ─── Realtime subscriptions: mutate the cache in place instead of
+  //     duplicating state. Single source of truth = the React Query cache.
   useEffect(() => {
     setRealtimeStatus('connecting')
 
@@ -131,17 +107,20 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
         { event: 'INSERT', schema: 'public', table: 'chat_messages' },
         (payload) => {
           const newMsg = payload.new as Message
-          // Si es del thread activo, agregar al chat
-          if (newMsg.thread_id === activeThreadId) {
-            setMessages((prev) => {
+          // Append to the cached messages list for that thread
+          queryClient.setQueryData<Message[]>(
+            queryKeys.conversaciones.messages(newMsg.thread_id),
+            (prev) => {
+              if (!prev) return [newMsg]
               if (prev.find((m) => m.id === newMsg.id)) return prev
               return [...prev, newMsg]
-            })
-          } else if (newMsg.direction === 'inbound') {
-            // Mensaje nuevo en otro thread → toast + counter
+            },
+          )
+          // Bump unread counter only for inbound messages on inactive threads
+          if (newMsg.thread_id !== activeThreadId && newMsg.direction === 'inbound') {
             setUnreadCount((n) => n + 1)
           }
-        }
+        },
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') setRealtimeStatus('live')
@@ -154,23 +133,24 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
         'postgres_changes',
         { event: '*', schema: 'public', table: 'chat_threads' },
         (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setThreads((prev) => {
+          queryClient.setQueryData<Thread[]>(queryKeys.conversaciones.threads, (prev) => {
+            if (!prev) return prev
+            if (payload.eventType === 'INSERT') {
               const newT = payload.new as Thread
               if (prev.find((t) => t.id === newT.id)) return prev
               return [newT, ...prev]
-            })
-          } else if (payload.eventType === 'UPDATE') {
-            setThreads((prev) => {
+            }
+            if (payload.eventType === 'UPDATE') {
               const updated = payload.new as Thread
               const filtered = prev.filter((t) => t.id !== updated.id)
               return [updated, ...filtered].sort(
                 (a, b) =>
-                  new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
+                  new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime(),
               )
-            })
-          }
-        }
+            }
+            return prev
+          })
+        },
       )
       .subscribe()
 
@@ -178,19 +158,37 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
       supabase.removeChannel(messagesChannel)
       supabase.removeChannel(threadsChannel)
     }
-  }, [supabase, activeThreadId])
+  }, [supabase, activeThreadId, queryClient])
 
   // Reset unread cuando entras a un thread
   useEffect(() => {
     if (activeThreadId) setUnreadCount(0)
   }, [activeThreadId])
 
-  async function sendMessage() {
-    if (!draft.trim() || !activeThread || sending) return
-    setSending(true)
+  // ─── Send message mutation. Optimistically appends to messages cache,
+  //     rolls back on failure, restores draft.
+  const sendMessageMutation = useSupabaseMutation<
+    { thread: Thread; text: string },
+    void
+  >({
+    mutationFn: async ({ thread, text }) => {
+      const res = await fetch('/api/whatsapp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: thread.phone, text, threadId: thread.id }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    },
+    invalidateKeys: [], // realtime will append the message via setQueryData
+    errorMessage: 'No se pudo enviar el mensaje',
+  })
+
+  function sendMessage() {
+    if (!draft.trim() || !activeThread || sendMessageMutation.isPending) return
     const text = draft
     setDraft('')
 
+    // Optimistic: insert temp message in cache so the bubble appears instantly
     const optimistic: Message = {
       id: 'temp-' + Date.now(),
       thread_id: activeThread.id,
@@ -199,83 +197,104 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
       content: text,
       created_at: new Date().toISOString(),
     }
-    setMessages((prev) => [...prev, optimistic])
+    queryClient.setQueryData<Message[]>(
+      queryKeys.conversaciones.messages(activeThread.id),
+      (prev) => (prev ? [...prev, optimistic] : [optimistic]),
+    )
 
-    try {
-      const res = await fetch('/api/whatsapp/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: activeThread.phone, text, threadId: activeThread.id }),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    } catch (err) {
-      // Rollback optimistic update + restore draft so user doesn't lose what they typed
-      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id))
-      setDraft(text)
-      toast.error('No se pudo enviar el mensaje', {
-        description: err instanceof Error ? err.message : 'Tu texto quedó intacto, intenta de nuevo.',
-      })
-    } finally {
-      setSending(false)
-    }
+    sendMessageMutation.mutate(
+      { thread: activeThread, text },
+      {
+        onError: () => {
+          // Rollback the optimistic message + restore draft
+          queryClient.setQueryData<Message[]>(
+            queryKeys.conversaciones.messages(activeThread.id),
+            (prev) => prev?.filter((m) => m.id !== optimistic.id) ?? prev,
+          )
+          setDraft(text)
+        },
+      },
+    )
   }
 
-  async function toggleBot() {
+  // ─── Toggle bot active mutation. Cache-level optimistic update.
+  const toggleBotMutation = useSupabaseMutation<
+    { thread: Thread; newState: boolean },
+    void
+  >({
+    mutationFn: async ({ thread, newState }) => {
+      const res = await fetch('/api/whatsapp/send', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId: thread.id, bot_active: newState }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    },
+    successMessage: ({}, input) => (input.newState ? 'Bot reanudado' : 'Bot pausado'),
+    errorMessage: 'No se pudo cambiar el estado del bot',
+  })
+
+  function toggleBot() {
     if (!activeThread) return
     const newState = !activeThread.bot_active
-    const prevState = activeThread.bot_active
-    setThreads((prev) =>
-      prev.map((t) => (t.id === activeThread.id ? { ...t, bot_active: newState } : t))
+    queryClient.setQueryData<Thread[]>(queryKeys.conversaciones.threads, (prev) =>
+      prev?.map((t) => (t.id === activeThread.id ? { ...t, bot_active: newState } : t)) ?? prev,
     )
-    try {
-      const res = await fetch('/api/whatsapp/send', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: activeThread.id, bot_active: newState }),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      toast.success(newState ? 'Bot reanudado' : 'Bot pausado', {
-        description: newState
-          ? 'El bot volverá a responder automáticamente.'
-          : 'Tú estás respondiendo este chat.',
-      })
-    } catch (err) {
-      // Rollback
-      setThreads((prev) =>
-        prev.map((t) => (t.id === activeThread.id ? { ...t, bot_active: prevState } : t))
-      )
-      toast.error('No se pudo cambiar el estado del bot', {
-        description: err instanceof Error ? err.message : 'Intenta de nuevo.',
-      })
-    }
+    toggleBotMutation.mutate(
+      { thread: activeThread, newState },
+      {
+        onError: () => {
+          // Rollback
+          queryClient.setQueryData<Thread[]>(queryKeys.conversaciones.threads, (prev) =>
+            prev?.map((t) =>
+              t.id === activeThread.id ? { ...t, bot_active: !newState } : t,
+            ) ?? prev,
+          )
+        },
+      },
+    )
   }
 
-  async function changeStatus(newStatus: string) {
-    if (!activeThread) return
-    const prevStatus = activeThread.status
-    setThreads((prev) =>
-      prev.map((t) => (t.id === activeThread.id ? { ...t, status: newStatus } : t))
-    )
-    try {
+  // ─── Status change mutation
+  const changeStatusMutation = useSupabaseMutation<
+    { thread: Thread; newStatus: string; prevStatus: string },
+    void
+  >({
+    mutationFn: async ({ thread, newStatus }) => {
       const res = await fetch('/api/whatsapp/send', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId: activeThread.id, status: newStatus }),
+        body: JSON.stringify({ threadId: thread.id, status: newStatus }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      toast.success('Estado actualizado', {
-        description: `Marcado como ${STATUS_LABELS[newStatus] || newStatus}.`,
-      })
-    } catch (err) {
-      // Rollback
-      setThreads((prev) =>
-        prev.map((t) => (t.id === activeThread.id ? { ...t, status: prevStatus } : t))
-      )
-      toast.error('No se pudo actualizar el estado', {
-        description: err instanceof Error ? err.message : 'Intenta de nuevo.',
-      })
-    }
+    },
+    successMessage: ({}, input) =>
+      `Marcado como ${STATUS_LABELS[input.newStatus] || input.newStatus}`,
+    errorMessage: 'No se pudo actualizar el estado',
+  })
+
+  function changeStatus(newStatus: string) {
+    if (!activeThread) return
+    const prevStatus = activeThread.status
+    queryClient.setQueryData<Thread[]>(queryKeys.conversaciones.threads, (prev) =>
+      prev?.map((t) => (t.id === activeThread.id ? { ...t, status: newStatus } : t)) ?? prev,
+    )
+    changeStatusMutation.mutate(
+      { thread: activeThread, newStatus, prevStatus },
+      {
+        onError: () => {
+          queryClient.setQueryData<Thread[]>(queryKeys.conversaciones.threads, (prev) =>
+            prev?.map((t) =>
+              t.id === activeThread.id ? { ...t, status: prevStatus } : t,
+            ) ?? prev,
+          )
+        },
+      },
+    )
   }
+
+  // Sending state derived from mutation
+  const sending = sendMessageMutation.isPending
 
   const filteredThreads = threads.filter((t) => {
     if (!search) return true
@@ -340,7 +359,7 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
               <span className="text-xs text-zinc-500">{filteredThreads.length}</span>
               <button
                 onClick={() => {
-                  refreshThreads()
+                  refetchThreads()
                   router.refresh()
                 }}
                 disabled={refreshing}
