@@ -1,5 +1,6 @@
 import { DashboardSidebar } from '@/components/layout/DashboardSidebar'
 import { CommandPalette } from '@/components/layout/CommandPalette'
+import { AriaWidget } from '@/components/aria/AriaWidget'
 
 export default function DashboardLayout({
   children,
@@ -21,6 +22,9 @@ export default function DashboardLayout({
 
       {/* Cmd+K palette — globally available across the dashboard */}
       <CommandPalette />
+
+      {/* Aria — floating chat widget (Cmd+J) wired to the n8n brain */}
+      <AriaWidget />
     </div>
   )
 }

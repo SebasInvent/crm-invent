@@ -2,6 +2,12 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  useSupabaseQuery,
+  useSupabaseMutation,
+  queryKeys,
+} from '@/lib/hooks/useSupabaseQuery'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -20,7 +26,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { supabase } from '@/lib/supabase'
 import { format, isToday, isYesterday } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { toast } from 'sonner'
 import { EmptyState } from '@/components/ui/empty-state'
 import { 
   Search, 
@@ -60,160 +65,163 @@ function InboxContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  
-  const [conversations, setConversations] = useState<Conversation[]>([])
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
-  const [messages, setMessages] = useState<UnifiedMessage[]>([])
-  const [channels, setChannels] = useState<Channel[]>([])
-  const [templates, setTemplates] = useState<MessageTemplate[]>([])
-  
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
   const [newMessage, setNewMessage] = useState('')
   const [selectedChannel, setSelectedChannel] = useState<string>('all')
-  
+
   const conversationId = searchParams.get('conversation')
 
+  // ─── Three independent queries, all cached. Switching tabs back and
+  //     forth no longer triggers re-fetches; only window-focus does.
+  const { data: conversations = [], isLoading: loading } = useSupabaseQuery<Conversation[]>({
+    queryKey: queryKeys.inbox.conversations,
+    queryFn: () =>
+      supabase
+        .from('conversations_view')
+        .select('*')
+        .order('last_message_at', { ascending: false })
+        .limit(50) as unknown as Promise<{ data: Conversation[] | null; error: { message: string } | null }>,
+  })
+
+  const { data: channels = [] } = useSupabaseQuery<Channel[]>({
+    queryKey: queryKeys.inbox.channels,
+    queryFn: () =>
+      supabase
+        .from('channels')
+        .select('*')
+        .eq('status', 'active') as unknown as Promise<{ data: Channel[] | null; error: { message: string } | null }>,
+    staleTime: 5 * 60_000, // channels rarely change
+  })
+
+  const { data: templates = [] } = useSupabaseQuery<MessageTemplate[]>({
+    queryKey: queryKeys.inbox.templates,
+    queryFn: () =>
+      supabase
+        .from('message_templates')
+        .select('*')
+        .eq('is_active', true) as unknown as Promise<{ data: MessageTemplate[] | null; error: { message: string } | null }>,
+    staleTime: 5 * 60_000,
+  })
+
+  // ─── Selected conversation: derived from URL param + cached list.
+  //     If we have it in cache (came from list click), use it; else
+  //     fall back to fetching once.
+  const { data: selectedConversation } = useSupabaseQuery<Conversation | null>({
+    queryKey: ['inbox', 'conversation', conversationId],
+    queryFn: () =>
+      supabase
+        .from('conversations_view')
+        .select('*')
+        .eq('id', conversationId!)
+        .single() as unknown as Promise<{ data: Conversation | null; error: { message: string } | null }>,
+    enabled: !!conversationId,
+  })
+
+  // ─── Messages depend on conversationId; only enabled when set.
+  const { data: messages = [] } = useSupabaseQuery<UnifiedMessage[]>({
+    queryKey: conversationId
+      ? queryKeys.inbox.messages(conversationId)
+      : ['inbox', 'messages', 'none'],
+    queryFn: () =>
+      supabase
+        .from('inbox_view')
+        .select('*')
+        .eq('conversation_id', conversationId!)
+        .order('created_at', { ascending: true }) as unknown as Promise<{ data: UnifiedMessage[] | null; error: { message: string } | null }>,
+    enabled: !!conversationId,
+  })
+
+  // ─── Mark conversation as read whenever we open it.
+  //     This is a side-effect of selecting a conversation, not a query.
   useEffect(() => {
-    fetchData()
-    
-    // Subscribe to realtime messages
+    if (!conversationId) return
+    // The supabase generated types don't expose this update — cast to bypass.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    void (supabase.from('conversations') as any)
+      .update({ unread_count: 0 })
+      .eq('id', conversationId)
+      .then(() => {
+        // Optimistically mark in the cached list too — feels instant
+        queryClient.setQueryData<Conversation[]>(
+          queryKeys.inbox.conversations,
+          (prev) =>
+            prev?.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c)) ?? prev,
+        )
+      })
+  }, [conversationId, queryClient])
+
+  // ─── Realtime: when a new message arrives, append to messages cache
+  //     for the affected conversation, and bump the conversations list.
+  useEffect(() => {
     const subscription = supabase
       .channel('unified_messages')
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'unified_messages' 
-      }, (payload) => {
-        handleNewMessage(payload.new as UnifiedMessage)
-      })
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'unified_messages' },
+        (payload) => {
+          const message = payload.new as UnifiedMessage
+          // Append to messages cache for that conversation
+          queryClient.setQueryData<UnifiedMessage[]>(
+            queryKeys.inbox.messages(message.conversation_id),
+            (prev) => (prev ? [...prev, message] : [message]),
+          )
+          // Refetch conversations list (preview, last_message_at, unread_count)
+          queryClient.invalidateQueries({ queryKey: queryKeys.inbox.conversations })
+        },
+      )
       .subscribe()
-    
+
     return () => {
       subscription.unsubscribe()
     }
-  }, [])
-
-  useEffect(() => {
-    if (conversationId) {
-      loadConversation(conversationId)
-    }
-  }, [conversationId])
+  }, [queryClient])
 
   useEffect(() => {
     scrollToBottom()
   }, [messages])
 
-  async function fetchData() {
-    setLoading(true)
-    try {
-      // Run the three queries in parallel — they're independent
-      const [conversationsRes, channelsRes, templatesRes] = await Promise.all([
-        supabase
-          .from('conversations_view')
-          .select('*')
-          .order('last_message_at', { ascending: false })
-          .limit(50),
-        supabase
-          .from('channels')
-          .select('*')
-          .eq('status', 'active'),
-        supabase
-          .from('message_templates')
-          .select('*')
-          .eq('is_active', true),
-      ])
-
-      if (conversationsRes.error) throw conversationsRes.error
-      if (channelsRes.error) throw channelsRes.error
-      if (templatesRes.error) throw templatesRes.error
-
-      if (conversationsRes.data) setConversations(conversationsRes.data as Conversation[])
-      if (channelsRes.data) setChannels(channelsRes.data as Channel[])
-      if (templatesRes.data) setTemplates(templatesRes.data as MessageTemplate[])
-    } catch (err) {
-      console.error('Error fetching inbox:', err)
-      toast.error('No se pudo cargar la bandeja', {
-        description: err instanceof Error ? err.message : 'Reintentando…',
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function loadConversation(id: string) {
-    const { data: conversation } = await supabase
-      .from('conversations_view')
-      .select('*')
-      .eq('id', id)
-      .single()
-    
-    if (conversation) {
-      setSelectedConversation(conversation as Conversation)
-      
-      // Load messages
-      const { data: messagesData } = await supabase
-        .from('inbox_view')
-        .select('*')
-        .eq('conversation_id', id)
-        .order('created_at', { ascending: true })
-      
-      if (messagesData) {
-        setMessages(messagesData as UnifiedMessage[])
-      }
-      
-      // Mark as read
-      await supabase
-        .from('conversations')
-        .update({ unread_count: 0 })
-        .eq('id', id)
-      
-      // Update local state
-      setConversations(prev => 
-        prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c)
-      )
-    }
-  }
-
-  function handleNewMessage(message: UnifiedMessage) {
-    if (selectedConversation?.id === message.conversation_id) {
-      setMessages(prev => [...prev, message])
-    }
-    
-    // Refresh conversation list
-    fetchData()
-  }
-
-  async function sendMessage() {
-    if (!newMessage.trim() || !selectedConversation) return
-
-    const channel = channels.find(c => c.id === selectedConversation.channel_id)
-    const text = newMessage
-
-    try {
+  // ─── Send message mutation. Optimistically appends to the messages cache.
+  const sendMessageMutation = useSupabaseMutation<
+    { conversation: Conversation; text: string },
+    void
+  >({
+    mutationFn: async ({ conversation, text }) => {
+      const channel = channels.find((c) => c.id === conversation.channel_id)
       const { error } = await supabase
         .from('unified_messages')
         .insert({
-          conversation_id: selectedConversation.id,
-          channel_id: selectedConversation.channel_id,
+          conversation_id: conversation.id,
+          channel_id: conversation.channel_id,
           channel_type: channel?.type || 'webchat',
-          contact_id: selectedConversation.contact_id,
+          contact_id: conversation.contact_id,
           direction: 'outbound',
           message_type: 'text',
           content: text,
           status: 'sent',
-          sent_at: new Date().toISOString()
+          sent_at: new Date().toISOString(),
         } as any)
+      if (error) throw new Error(error.message)
+    },
+    invalidateKeys: [], // realtime subscription will append
+    errorMessage: 'No se pudo enviar el mensaje',
+  })
 
-      if (error) throw error
-      setNewMessage('')
-    } catch (err) {
-      console.error('Error sending message:', err)
-      toast.error('No se pudo enviar el mensaje', {
-        description: err instanceof Error ? err.message : 'Tu mensaje quedó intacto, intenta de nuevo.',
-      })
-    }
+  function sendMessage() {
+    if (!newMessage.trim() || !selectedConversation) return
+    const text = newMessage
+    setNewMessage('')
+    sendMessageMutation.mutate(
+      { conversation: selectedConversation, text },
+      {
+        onError: () => {
+          // Restore draft so the user doesn't lose what they typed
+          setNewMessage(text)
+        },
+      },
+    )
   }
 
   function scrollToBottom() {
@@ -341,7 +349,6 @@ function InboxContent() {
                   key={conversation.id}
                   onClick={() => {
                     router.push(`/dashboard/inbox?conversation=${conversation.id}`)
-                    loadConversation(conversation.id)
                   }}
                   className={`w-full p-4 text-left hover:bg-zinc-900/50 transition-colors ${
                     selectedConversation?.id === conversation.id ? 'bg-zinc-900' : ''
@@ -407,7 +414,7 @@ function InboxContent() {
                 variant="ghost"
                 size="icon"
                 className="md:hidden h-9 w-9 text-zinc-400"
-                onClick={() => setSelectedConversation(null)}
+                onClick={() => router.push('/dashboard/inbox')}
                 aria-label="Volver a conversaciones"
               >
                 <ChevronLeft className="h-4 w-4" />

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,6 +15,11 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { EmptyState } from '@/components/ui/empty-state'
+import {
+  useSupabaseQuery,
+  useSupabaseMutation,
+  queryKeys,
+} from '@/lib/hooks/useSupabaseQuery'
 import {
   Plus,
   Search,
@@ -32,90 +37,78 @@ import {
 } from 'lucide-react'
 import type { Contact, Deal, ActivityLog } from '@/types/crm-core'
 
+type NewContactInput = {
+  first_name: string
+  last_name: string
+  email: string
+  phone: string
+  company_name: string
+  job_title: string
+  type: 'lead' | 'prospect' | 'customer' | 'partner' | 'supplier'
+  source: 'manual' | 'web_form' | 'telegram' | 'openclaw' | 'referral' | 'linkedin'
+}
+
+const emptyContactForm: NewContactInput = {
+  first_name: '',
+  last_name: '',
+  email: '',
+  phone: '',
+  company_name: '',
+  job_title: '',
+  type: 'lead',
+  source: 'manual',
+}
+
 export default function ContactsPage() {
   const router = useRouter()
-  const [contacts, setContacts] = useState<Contact[]>([])
-  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterType, setFilterType] = useState<string>('all')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  
-  const [newContact, setNewContact] = useState({
-    first_name: '',
-    last_name: '',
-    email: '',
-    phone: '',
-    company_name: '',
-    job_title: '',
-    type: 'lead' as const,
-    source: 'manual' as const
-  })
+  const [newContact, setNewContact] = useState<NewContactInput>(emptyContactForm)
 
-  useEffect(() => {
-    fetchContacts()
-  }, [filterType])
-
-  async function fetchContacts() {
-    setLoading(true)
-    try {
+  // Query: contacts list, scoped by filterType. The cache key includes
+  // filterType so switching filter doesn't show stale data and going back
+  // to a previously-loaded filter is instant.
+  const {
+    data: contacts = [],
+    isLoading: loading,
+  } = useSupabaseQuery<Contact[]>({
+    queryKey: queryKeys.contacts.list(filterType),
+    queryFn: async () => {
       let query = supabase
         .from('contacts_with_organization')
         .select('*')
         .order('created_at', { ascending: false })
+      if (filterType !== 'all') query = query.eq('type', filterType)
+      return query as unknown as Promise<{ data: Contact[] | null; error: { message: string } | null }>
+    },
+  })
 
-      if (filterType !== 'all') {
-        query = query.eq('type', filterType)
-      }
+  // Mutation: create contact. On success the cache is invalidated, the
+  // dialog closes, and the form resets — no manual refetch needed.
+  const createContactMutation = useSupabaseMutation<NewContactInput, void>({
+    mutationFn: async (input) => {
+      const { error } = await supabase
+        .from('contacts')
+        .insert(input as any)
+      if (error) throw new Error(error.message)
+    },
+    invalidateKeys: [queryKeys.contacts.all],
+    successMessage: (_, input) =>
+      `Contacto creado: ${input.first_name} ${input.last_name}`.trim(),
+    errorMessage: 'No se pudo crear el contacto',
+    onSuccess: () => {
+      setIsCreateDialogOpen(false)
+      setNewContact(emptyContactForm)
+    },
+  })
 
-      const { data, error } = await query
-      if (error) throw error
-
-      if (data) {
-        setContacts(data)
-      }
-    } catch (err) {
-      console.error('Error fetching contacts:', err)
-      toast.error('No se pudieron cargar los contactos', {
-        description: err instanceof Error ? err.message : 'Intenta de nuevo en unos segundos.',
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function createContact() {
+  function createContact() {
     if (!newContact.first_name.trim()) {
       toast.error('El nombre es obligatorio')
       return
     }
-    try {
-      const { error } = await supabase
-        .from('contacts')
-        .insert(newContact as any)
-
-      if (error) throw error
-
-      toast.success('Contacto creado', {
-        description: `${newContact.first_name} ${newContact.last_name}`.trim(),
-      })
-      setIsCreateDialogOpen(false)
-      setNewContact({
-        first_name: '',
-        last_name: '',
-        email: '',
-        phone: '',
-        company_name: '',
-        job_title: '',
-        type: 'lead',
-        source: 'manual'
-      })
-      fetchContacts()
-    } catch (err) {
-      console.error('Error creating contact:', err)
-      toast.error('No se pudo crear el contacto', {
-        description: err instanceof Error ? err.message : 'Revisa los datos e intenta de nuevo.',
-      })
-    }
+    createContactMutation.mutate(newContact)
   }
 
   const filteredContacts = contacts.filter(contact => {
@@ -424,9 +417,9 @@ export default function ContactsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm text-zinc-400 mb-1 block">Tipo</label>
-                <Select 
-                  value={newContact.type} 
-                  onValueChange={(value) => setNewContact({...newContact, type: value as any})}
+                <Select
+                  value={newContact.type}
+                  onValueChange={(value) => setNewContact({...newContact, type: value as NewContactInput['type']})}
                 >
                   <SelectTrigger className="bg-zinc-900 border-zinc-800 text-white">
                     <SelectValue />
@@ -442,9 +435,9 @@ export default function ContactsPage() {
               </div>
               <div>
                 <label className="text-sm text-zinc-400 mb-1 block">Origen</label>
-                <Select 
-                  value={newContact.source} 
-                  onValueChange={(value) => setNewContact({...newContact, source: value as any})}
+                <Select
+                  value={newContact.source}
+                  onValueChange={(value) => setNewContact({...newContact, source: value as NewContactInput['source']})}
                 >
                   <SelectTrigger className="bg-zinc-900 border-zinc-800 text-white">
                     <SelectValue />
@@ -469,12 +462,12 @@ export default function ContactsPage() {
               >
                 Cancelar
               </Button>
-              <Button 
+              <Button
                 className="bg-white text-black hover:bg-zinc-200"
                 onClick={createContact}
-                disabled={!newContact.first_name}
+                disabled={!newContact.first_name || createContactMutation.isPending}
               >
-                Crear Contacto
+                {createContactMutation.isPending ? 'Creando…' : 'Crear Contacto'}
               </Button>
             </div>
           </div>

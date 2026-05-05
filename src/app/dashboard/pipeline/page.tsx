@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -13,6 +14,11 @@ import { supabase } from '@/lib/supabase'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
+import {
+  useSupabaseQuery,
+  useSupabaseMutation,
+  queryKeys,
+} from '@/lib/hooks/useSupabaseQuery'
 import { 
   Plus, 
   Search, 
@@ -35,189 +41,198 @@ interface KanbanColumnData {
   deals: Deal[];
 }
 
+type NewDealForm = {
+  name: string
+  contact_id: string
+  value: string
+  stage_id: string
+  expected_close_date: string
+  description: string
+}
+
+const emptyDealForm: NewDealForm = {
+  name: '',
+  contact_id: '',
+  value: '',
+  stage_id: '',
+  expected_close_date: '',
+  description: '',
+}
+
 export default function PipelinePage() {
   const router = useRouter()
-  const [stages, setStages] = useState<KanbanColumnData[]>([])
-  const [contacts, setContacts] = useState<Contact[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [searchQuery, setSearchQuery] = useState('')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  const [selectedPipeline, setSelectedPipeline] = useState<string>('default')
-  
-  // Form state
-  const [newDeal, setNewDeal] = useState({
-    name: '',
-    contact_id: '',
-    value: '',
-    stage_id: '',
-    expected_close_date: '',
-    description: ''
+  const [newDeal, setNewDeal] = useState<NewDealForm>(emptyDealForm)
+
+  // ─── Three independent queries — pipeline_stages and contacts barely
+  //     change during a session, deals_full updates often.
+  const { data: stagesData = [], isLoading: stagesLoading } = useSupabaseQuery<PipelineStage[]>({
+    queryKey: queryKeys.pipeline.stages,
+    queryFn: () =>
+      supabase
+        .from('pipeline_stages')
+        .select('*')
+        .eq('is_active', true)
+        .order('order_index') as unknown as Promise<{ data: PipelineStage[] | null; error: { message: string } | null }>,
+    staleTime: 5 * 60_000,
   })
 
-  useEffect(() => {
-    fetchData()
-  }, [selectedPipeline])
+  const { data: dealsData = [], isLoading: dealsLoading } = useSupabaseQuery<Deal[]>({
+    queryKey: queryKeys.pipeline.deals,
+    queryFn: () =>
+      supabase
+        .from('deals_full')
+        .select('*')
+        .eq('status', 'open')
+        .order('updated_at', { ascending: false }) as unknown as Promise<{ data: Deal[] | null; error: { message: string } | null }>,
+  })
 
-  async function fetchData() {
-    setLoading(true)
-    try {
-      // Run independent queries in parallel — much faster on first paint
-      const [stagesRes, dealsRes, contactsRes] = await Promise.all([
-        supabase
-          .from('pipeline_stages')
-          .select('*')
-          .eq('is_active', true)
-          .order('order_index'),
-        supabase
-          .from('deals_full')
-          .select('*')
-          .eq('status', 'open')
-          .order('updated_at', { ascending: false }),
-        supabase
-          .from('contacts')
-          .select('id, first_name, last_name, email, company_name')
-          .eq('status', 'active')
-          .order('first_name'),
-      ])
+  const { data: contacts = [] } = useSupabaseQuery<Contact[]>({
+    queryKey: queryKeys.pipeline.contacts,
+    queryFn: () =>
+      supabase
+        .from('contacts')
+        .select('id, first_name, last_name, email, company_name')
+        .eq('status', 'active')
+        .order('first_name') as unknown as Promise<{ data: Contact[] | null; error: { message: string } | null }>,
+    staleTime: 5 * 60_000,
+  })
 
-      if (stagesRes.error) throw stagesRes.error
-      if (dealsRes.error) throw dealsRes.error
-      if (contactsRes.error) throw contactsRes.error
+  const loading = stagesLoading || dealsLoading
 
-      const stagesData = stagesRes.data
-      const dealsData = dealsRes.data
-      const contactsData = contactsRes.data
+  // ─── Stages with their deals composed in memory. Memoized so dragging
+  //     doesn't recompute the whole structure on every render.
+  const stages = useMemo<KanbanColumnData[]>(
+    () =>
+      stagesData.map((stage) => ({
+        id: stage.id,
+        name: stage.name,
+        color: stage.color,
+        order_index: stage.order_index,
+        probability: stage.default_probability,
+        deals: dealsData.filter((d) => d.stage_id === stage.id),
+      })),
+    [stagesData, dealsData],
+  )
 
-      if (stagesData && dealsData) {
-        const columns: KanbanColumnData[] = (stagesData as PipelineStage[]).map(stage => ({
-          id: stage.id,
-          name: stage.name,
-          color: stage.color,
-          order_index: stage.order_index,
-          probability: stage.default_probability,
-          deals: (dealsData as Deal[]).filter(d => d.stage_id === stage.id) || []
-        }))
-        setStages(columns)
-      }
+  // ─── Drag mutation with cache-level optimistic update.
+  //     We mutate the deals query cache directly so the kanban repaints
+  //     instantly, and roll back if Supabase rejects.
+  const moveDealMutation = useSupabaseMutation<
+    { dealId: string; toStageId: string; toProbability: number; toStageName: string; dealName: string },
+    void
+  >({
+    mutationFn: async ({ dealId, toStageId, toProbability }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase.from('deals') as any)
+        .update({
+          stage_id: toStageId,
+          probability: toProbability,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', dealId)
+      if (error) throw new Error(error.message)
+    },
+    invalidateKeys: [queryKeys.pipeline.deals],
+    successMessage: ({}, input) =>
+      `Movido a "${input.toStageName}" • ${input.toProbability}%`,
+    errorMessage: 'No se pudo mover el deal',
+  })
 
-      if (contactsData) {
-        setContacts(contactsData)
-      }
-    } catch (err) {
-      console.error('Error fetching pipeline:', err)
-      toast.error('No se pudo cargar el pipeline', {
-        description: err instanceof Error ? err.message : 'Reintenta en unos segundos.',
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleDragEnd(result: DropResult) {
+  function handleDragEnd(result: DropResult) {
     if (!result.destination) return
-    
     const { source, destination, draggableId } = result
-    
-    if (source.droppableId === destination.droppableId && source.index === destination.index) {
-      return
-    }
-    
-    // Find the deal being moved
-    const sourceStage = stages.find(s => s.id === source.droppableId)
-    const destStage = stages.find(s => s.id === destination.droppableId)
-    
-    if (!sourceStage || !destStage) return
-    
-    const deal = sourceStage.deals[source.index]
-    
-    // Optimistic update
-    const newStages = [...stages]
-    const sourceCol = newStages.find(s => s.id === source.droppableId)
-    const destCol = newStages.find(s => s.id === destination.droppableId)
-    
-    if (sourceCol && destCol) {
-      sourceCol.deals.splice(source.index, 1)
-      destCol.deals.splice(destination.index, 0, { ...deal, stage_id: destination.droppableId })
-      setStages(newStages)
-    }
-    
-    // Update in database
-    const { error } = await (supabase
-      .from('deals')
-      .update({
-        stage_id: destination.droppableId,
-        probability: destStage.default_probability,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', draggableId) as any)
+    if (source.droppableId === destination.droppableId && source.index === destination.index) return
 
-    if (error) {
-      console.error('Error moving deal:', error)
-      toast.error('No se pudo mover el deal', {
-        description: error.message || 'Devolviéndolo a su columna original…',
-      })
-      fetchData() // Revert on error
-    } else {
-      toast.success(`Movido a "${destStage.name}"`, {
-        description: `${deal.name} • ${destStage.probability}% probabilidad`,
-      })
-    }
+    const sourceStage = stages.find((s) => s.id === source.droppableId)
+    const destStage = stages.find((s) => s.id === destination.droppableId)
+    if (!sourceStage || !destStage) return
+
+    const deal = sourceStage.deals[source.index]
+    if (!deal) return
+
+    // Optimistic cache update — repaint the kanban immediately
+    queryClient.setQueryData<Deal[]>(queryKeys.pipeline.deals, (prev) =>
+      prev?.map((d) =>
+        d.id === draggableId
+          ? { ...d, stage_id: destination.droppableId, probability: destStage.probability }
+          : d,
+      ) ?? prev,
+    )
+
+    moveDealMutation.mutate({
+      dealId: draggableId,
+      toStageId: destination.droppableId,
+      toProbability: destStage.probability,
+      toStageName: destStage.name,
+      dealName: deal.name,
+    })
   }
 
-  async function createDeal() {
+  // ─── Create deal mutation
+  const createDealMutation = useSupabaseMutation<NewDealForm, void>({
+    mutationFn: async (input) => {
+      const stage = stages.find((s) => s.id === input.stage_id)
+      const { error } = await supabase
+        .from('deals')
+        .insert({
+          name: input.name,
+          contact_id: input.contact_id,
+          value: parseFloat(input.value) || 0,
+          stage_id: input.stage_id,
+          expected_close_date: input.expected_close_date || null,
+          description: input.description,
+          probability: stage?.probability || 0,
+          status: 'open',
+        } as any)
+      if (error) throw new Error(error.message)
+    },
+    invalidateKeys: [queryKeys.pipeline.deals],
+    successMessage: (_, input) => {
+      const stage = stages.find((s) => s.id === input.stage_id)
+      return `Deal creado: ${input.name} en "${stage?.name ?? '—'}"`
+    },
+    errorMessage: 'No se pudo crear el deal',
+    onSuccess: () => {
+      setIsCreateDialogOpen(false)
+      setNewDeal(emptyDealForm)
+    },
+  })
+
+  function createDeal() {
     if (!newDeal.name.trim() || !newDeal.contact_id || !newDeal.stage_id) {
       toast.error('Completa los campos obligatorios')
       return
     }
-    const stage = stages.find(s => s.id === newDeal.stage_id)
-    try {
-      const { error } = await supabase
-        .from('deals')
-        .insert({
-          name: newDeal.name,
-          contact_id: newDeal.contact_id,
-          value: parseFloat(newDeal.value) || 0,
-          stage_id: newDeal.stage_id,
-          expected_close_date: newDeal.expected_close_date || null,
-          description: newDeal.description,
-          probability: stage?.default_probability || 0,
-          status: 'open'
-        } as any)
-
-      if (error) throw error
-
-      toast.success('Deal creado', {
-        description: `${newDeal.name} en "${stage?.name}"`,
-      })
-      setIsCreateDialogOpen(false)
-      setNewDeal({ name: '', contact_id: '', value: '', stage_id: '', expected_close_date: '', description: '' })
-      fetchData()
-    } catch (err) {
-      console.error('Error creating deal:', err)
-      toast.error('No se pudo crear el deal', {
-        description: err instanceof Error ? err.message : 'Revisa los datos e intenta de nuevo.',
-      })
-    }
+    createDealMutation.mutate(newDeal)
   }
 
-  const filteredStages = stages.map(stage => ({
+  const filteredStages = stages.map((stage) => ({
     ...stage,
-    deals: stage.deals.filter(deal => 
-      deal.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      deal.contact_first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      deal.contact_last_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      deal.contact_company?.toLowerCase().includes(searchQuery.toLowerCase())
-    )
+    deals: stage.deals.filter(
+      (deal) =>
+        deal.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        deal.contact_first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        deal.contact_last_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        deal.contact_company?.toLowerCase().includes(searchQuery.toLowerCase()),
+    ),
   }))
 
-  const totalValue = stages.reduce((sum, stage) => 
-    sum + stage.deals.reduce((dealSum, deal) => dealSum + (deal.value || 0), 0), 0
+  const totalValue = stages.reduce(
+    (sum, stage) => sum + stage.deals.reduce((dealSum, deal) => dealSum + (deal.value || 0), 0),
+    0,
   )
 
-  const weightedValue = stages.reduce((sum, stage) => 
-    sum + stage.deals.reduce((dealSum, deal) => 
-      dealSum + ((deal.value || 0) * (deal.probability || 0) / 100), 0
-    ), 0
+  const weightedValue = stages.reduce(
+    (sum, stage) =>
+      sum +
+      stage.deals.reduce(
+        (dealSum, deal) => dealSum + ((deal.value || 0) * (deal.probability || 0)) / 100,
+        0,
+      ),
+    0,
   )
 
   return (
@@ -520,12 +535,17 @@ export default function PipelinePage() {
               >
                 Cancelar
               </Button>
-              <Button 
+              <Button
                 className="bg-white text-black hover:bg-zinc-200"
                 onClick={createDeal}
-                disabled={!newDeal.name || !newDeal.contact_id || !newDeal.stage_id}
+                disabled={
+                  !newDeal.name ||
+                  !newDeal.contact_id ||
+                  !newDeal.stage_id ||
+                  createDealMutation.isPending
+                }
               >
-                Crear Deal
+                {createDealMutation.isPending ? 'Creando…' : 'Crear Deal'}
               </Button>
             </div>
           </div>
