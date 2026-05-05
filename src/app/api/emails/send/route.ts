@@ -1,7 +1,17 @@
-// @ts-nocheck
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
+import { z } from 'zod'
 import { getServiceRoleClient } from '@/lib/supabase'
+import { requireAuth } from '@/lib/api-auth'
+
+// Validation schema for the send-email request body
+const sendEmailSchema = z.object({
+  to: z.string().email('Invalid recipient email'),
+  template: z.enum(['deliverable_ready', 'task_assigned']),
+  data: z.record(z.unknown()),
+  client_id: z.string().uuid().optional().nullable(),
+  deliverable_id: z.string().uuid().optional().nullable(),
+})
 
 let resend: Resend | null = null
 
@@ -134,33 +144,31 @@ function getTaskAssignedEmailTemplate(data: {
 }
 
 export async function POST(request: Request) {
+  // 🔐 Auth — only authenticated users can send emails through this endpoint.
+  const auth = await requireAuth()
+  if (auth.error) return auth.error
+
   try {
     const body = await request.json()
-    const { 
-      to, 
-      template, 
-      data,
-      client_id,
-      deliverable_id 
-    } = body
-
-    if (!to || !template) {
+    const parsed = sendEmailSchema.safeParse(body)
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Missing required fields: to, template' },
+        { error: 'Invalid body', details: parsed.error.flatten() },
         { status: 400 }
       )
     }
+    const { to, template, data, client_id, deliverable_id } = parsed.data
 
     const from = process.env.FROM_EMAIL || 'hola@inventagency.co'
-    let emailContent
+    let emailContent: { subject: string; html: string }
 
     // Seleccionar template
     switch (template) {
       case 'deliverable_ready':
-        emailContent = getDeliverableEmailTemplate(data)
+        emailContent = getDeliverableEmailTemplate(data as Parameters<typeof getDeliverableEmailTemplate>[0])
         break
       case 'task_assigned':
-        emailContent = getTaskAssignedEmailTemplate(data)
+        emailContent = getTaskAssignedEmailTemplate(data as Parameters<typeof getTaskAssignedEmailTemplate>[0])
         break
       default:
         return NextResponse.json(
@@ -194,8 +202,9 @@ export async function POST(request: Request) {
         to_email: to,
         subject: emailContent.subject,
         status: 'sent',
-        sent_at: new Date().toISOString()
-      } as any)
+        sent_at: new Date().toISOString(),
+        sent_by: auth.user.id,
+      } as never)
 
     if (logError) {
       console.error('Error logging email:', logError)
@@ -203,14 +212,13 @@ export async function POST(request: Request) {
 
     // Si es entregable, marcar como enviado
     if (deliverable_id) {
-      const supabaseAny = supabase as any
-      const { error: taskError } = await supabaseAny
+      const { error: taskError } = await supabase
         .from('agent_tasks')
         .update({
           status: 'completed',
           completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
+          updated_at: new Date().toISOString(),
+        } as never)
         .eq('id', deliverable_id)
 
       if (taskError) {
@@ -220,14 +228,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      messageId: sendData?.id
+      messageId: sendData?.id,
     })
-
   } catch (error) {
     console.error('Error in email API:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    const msg = error instanceof Error ? error.message : 'Internal server error'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
