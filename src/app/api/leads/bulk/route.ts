@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireAuth } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
+import { recordActivity, type ActivityType } from '@/lib/activity-log'
 
 /**
  * POST /api/leads/bulk
@@ -86,6 +87,41 @@ export async function POST(request: Request) {
         .in('id', parsed.ids)
       if (error) throw new Error(error.message)
       affected = count ?? parsed.ids.length
+    }
+
+    // Audit: one activity_log per affected lead. Type maps to the
+    // closest enum value so the timeline icon picks up the right
+    // semantics.
+    const typeMap: Record<typeof parsed.action, ActivityType> = {
+      change_status: 'lead_status_change',
+      change_priority: 'lead_priority_change',
+      archive: 'lead_archived',
+      delete: 'lead_deleted',
+    }
+    const activityType = typeMap[parsed.action]
+    const valueLabel = parsed.action === 'archive'
+      ? 'dead'
+      : parsed.action === 'delete'
+        ? null
+        : (parsed as any).value
+    for (const id of parsed.ids) {
+      recordActivity(supabase, {
+        lead_id: id,
+        activity_type: activityType,
+        title:
+          parsed.action === 'delete'
+            ? 'Lead eliminado (bulk)'
+            : parsed.action === 'archive'
+              ? 'Lead archivado (bulk)'
+              : `${parsed.action === 'change_status' ? 'Estado' : 'Prioridad'} cambiado a ${valueLabel} (bulk)`,
+        description: `Operación en lote sobre ${parsed.ids.length} leads.`,
+        metadata: {
+          actor_user_id: auth.user.id,
+          actor_email: auth.user.email,
+          bulk: true,
+          new_value: valueLabel,
+        },
+      })
     }
 
     return NextResponse.json({

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireAriaAuth, logAriaAction } from '@/lib/aria-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
+import { recordActivity } from '@/lib/activity-log'
 
 /**
  * POST /api/aria/actions/deals/move
@@ -87,6 +88,21 @@ export async function POST(request: Request) {
       .single()
 
     if (error) throw new Error(error.message)
+
+    // Audit trail
+    recordActivity(supabase, {
+      deal_id: parsed.deal_id,
+      activity_type: 'deal_moved',
+      title: `Deal movido a "${stage.name}"`,
+      description: `Probabilidad: ${probability}%`,
+      metadata: {
+        source: 'aria',
+        deal_name: deal?.name,
+        stage_id: stage.id,
+        stage_name: stage.name,
+        probability,
+      },
+    })
 
     logAriaAction('deals.move', { ...parsed, resolved_stage_id: stage.id }, 'ok')
     return NextResponse.json({

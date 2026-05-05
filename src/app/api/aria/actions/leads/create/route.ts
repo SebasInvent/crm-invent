@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireAriaAuth, logAriaAction } from '@/lib/aria-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
+import { recordActivity } from '@/lib/activity-log'
 
 /**
  * POST /api/aria/actions/leads/create
@@ -63,6 +64,17 @@ export async function POST(request: Request) {
       .single()
 
     if (error) throw new Error(error.message)
+
+    // Audit trail — first event for this lead
+    if (data?.id) {
+      recordActivity(supabase, {
+        lead_id: data.id,
+        activity_type: 'lead_created',
+        title: `Lead creado por Aria: ${parsed.name}`,
+        description: parsed.notes ?? null,
+        metadata: { source: 'aria', archetype: parsed.jung_archetype, status: parsed.lead_status },
+      })
+    }
 
     logAriaAction('leads.create', parsed, 'ok')
     return NextResponse.json({

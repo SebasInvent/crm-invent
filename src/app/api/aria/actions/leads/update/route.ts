@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireAriaAuth, logAriaAction } from '@/lib/aria-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
+import { recordActivity, type ActivityType } from '@/lib/activity-log'
 
 /**
  * PATCH /api/aria/actions/leads/update
@@ -68,6 +69,32 @@ export async function PATCH(request: Request) {
       .single()
 
     if (error) throw new Error(error.message)
+
+    // Audit trail: pick the most-relevant activity_type based on which
+    // field changed. If multiple fields changed, the status takes
+    // precedence because it's the highest-signal event.
+    const activityType: ActivityType =
+      patch.lead_status !== undefined
+        ? 'lead_status_change'
+        : patch.lead_score !== undefined
+          ? 'lead_score_change'
+          : patch.priority !== undefined
+            ? 'lead_priority_change'
+            : patch.next_follow_up_date !== undefined
+              ? 'lead_follow_up_set'
+              : 'note'
+
+    const changedFields = Object.keys(patch)
+      .filter((k) => k !== 'updated_at')
+      .join(', ')
+
+    recordActivity(supabase, {
+      lead_id: id,
+      activity_type: activityType,
+      title: `Aria actualizó ${changedFields || 'el lead'}`,
+      description: JSON.stringify(patch, null, 2),
+      metadata: { source: 'aria', patch },
+    })
 
     logAriaAction('leads.update', { id, ...patch }, 'ok')
     return NextResponse.json({
