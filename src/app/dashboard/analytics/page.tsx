@@ -164,10 +164,7 @@ export default function AnalyticsPage() {
                 <p className="text-2xl font-bold text-white mt-1">
                   ${stats.revenue.toLocaleString()}
                 </p>
-                <div className="flex items-center gap-1 mt-1 text-green-400 text-sm">
-                  <ArrowUpRight className="h-4 w-4" />
-                  <span>+12.5%</span>
-                </div>
+                <p className="text-xs text-zinc-500 mt-1">Últimos 30 días</p>
               </div>
               <div className="h-12 w-12 rounded-lg bg-green-500/20 flex items-center justify-center">
                 <DollarSign className="h-6 w-6 text-green-400" />
@@ -182,10 +179,7 @@ export default function AnalyticsPage() {
               <div>
                 <p className="text-sm text-zinc-400">Deals Ganados</p>
                 <p className="text-2xl font-bold text-white mt-1">{stats.dealsWon}</p>
-                <div className="flex items-center gap-1 mt-1 text-green-400 text-sm">
-                  <ArrowUpRight className="h-4 w-4" />
-                  <span>+5</span>
-                </div>
+                <p className="text-xs text-zinc-500 mt-1">Últimos 30 días</p>
               </div>
               <div className="h-12 w-12 rounded-lg bg-blue-500/20 flex items-center justify-center">
                 <Target className="h-6 w-6 text-blue-400" />
@@ -200,10 +194,7 @@ export default function AnalyticsPage() {
               <div>
                 <p className="text-sm text-zinc-400">Nuevos Contactos</p>
                 <p className="text-2xl font-bold text-white mt-1">{stats.newContacts}</p>
-                <div className="flex items-center gap-1 mt-1 text-zinc-400 text-sm">
-                  <Activity className="h-4 w-4" />
-                  <span>Estable</span>
-                </div>
+                <p className="text-xs text-zinc-500 mt-1">Últimos 30 días</p>
               </div>
               <div className="h-12 w-12 rounded-lg bg-purple-500/20 flex items-center justify-center">
                 <Users className="h-6 w-6 text-purple-400" />
@@ -220,10 +211,7 @@ export default function AnalyticsPage() {
                 <p className="text-2xl font-bold text-white mt-1">
                   {stats.conversionRate.toFixed(1)}%
                 </p>
-                <div className="flex items-center gap-1 mt-1 text-red-400 text-sm">
-                  <ArrowDownRight className="h-4 w-4" />
-                  <span>-2.1%</span>
-                </div>
+                <p className="text-xs text-zinc-500 mt-1">Últimos 30 días</p>
               </div>
               <div className="h-12 w-12 rounded-lg bg-orange-500/20 flex items-center justify-center">
                 <TrendingUp className="h-6 w-6 text-orange-400" />
