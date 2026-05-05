@@ -42,10 +42,10 @@ const store = new Map<string, Bucket>()
 let lastPrune = Date.now()
 function pruneIfNeeded(now: number) {
   if (now - lastPrune < 5 * 60_000) return
-  for (const [key, bucket] of store) {
+  store.forEach((bucket, key) => {
     bucket.hits = bucket.hits.filter((t) => now - t < 60 * 60_000)
     if (!bucket.hits.length) store.delete(key)
-  }
+  })
   lastPrune = now
 }
 
