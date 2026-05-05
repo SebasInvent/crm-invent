@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { Toaster } from 'sonner'
+import { Analytics } from '@vercel/analytics/next'
+import { SpeedInsights } from '@vercel/speed-insights/next'
 import { QueryProvider } from '@/components/providers/QueryProvider'
 import './globals.css'
 
@@ -68,6 +70,11 @@ export default function RootLayout({
             },
           }}
         />
+        {/* Vercel Analytics — page views and audience metrics. Free
+            tier covers our usage; data appears in the Vercel dashboard. */}
+        <Analytics />
+        {/* Vercel Speed Insights — Core Web Vitals (LCP, INP, CLS). */}
+        <SpeedInsights />
         <script
           dangerouslySetInnerHTML={{
             __html: `
