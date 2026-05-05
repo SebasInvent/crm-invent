@@ -1,6 +1,8 @@
 // @ts-nocheck
 import { NextResponse } from 'next/server'
 import { getServiceRoleClient } from '@/lib/supabase'
+import { rateLimitOrBlock } from '@/lib/rate-limit'
+import { validateWebhookToken } from '@/lib/api-auth'
 
 interface TelegramMessage {
   message_id: number
@@ -27,18 +29,20 @@ interface TelegramUpdate {
 
 // Webhook para recibir mensajes de Telegram
 export async function POST(request: Request) {
+  // 🚧 Rate limit per source IP — guards against abuse / DDoS-via-bot
+  // Telegram's official servers won't hit this; spammers will.
+  const blocked = rateLimitOrBlock(request, { key: 'telegram', window: '1m', max: 60 })
+  if (blocked) return blocked
+
   try {
     // Log para debugging
     console.log('📨 Telegram webhook recibido:', new Date().toISOString())
-    
-    // Nota: Telegram NO envía headers de autorización, por lo que no validamos SYNC_SECRET
-    // Si necesitas seguridad extra, usa el token en la URL: /api/webhook/telegram?token=XXX
-    const { searchParams } = new URL(request.url)
-    const token = searchParams.get('token')
+
+    // 🔐 Token validation (constant-time compare). Set TELEGRAM_WEBHOOK_TOKEN
+    // in env and configure Telegram bot's webhook URL with ?token=...
     const expectedToken = process.env.TELEGRAM_WEBHOOK_TOKEN
-    
-    if (expectedToken && token !== expectedToken) {
-      console.error('❌ Token de webhook inválido')
+    if (!validateWebhookToken(request, expectedToken)) {
+      console.error('❌ Token de webhook inválido o no configurado')
       return NextResponse.json(
         { error: 'Invalid webhook token' },
         { status: 401 }

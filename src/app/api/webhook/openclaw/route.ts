@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server'
 import { getServiceRoleClient } from '@/lib/supabase'
 import { contactService } from '@/lib/contact-service'
+import { rateLimitOrBlock } from '@/lib/rate-limit'
 
 // Tipos de eventos que puede recibir de OpenClaw/Sincronía
 type OpenClawEvent = 
@@ -51,17 +52,24 @@ interface OpenClawPayload {
 }
 
 export async function POST(request: Request) {
+  // 🚧 Rate limit per IP
+  const blocked = rateLimitOrBlock(request, { key: 'openclaw', window: '1m', max: 120 })
+  if (blocked) return blocked
+
   try {
     const SYNC_SECRET = process.env.SYNC_SECRET
     const authHeader = request.headers.get('authorization')
-    
-    // Verificar secret key SOLO si está configurado
-    if (SYNC_SECRET && authHeader !== `Bearer ${SYNC_SECRET}`) {
+
+    // 🔐 Now REQUIRED (was optional before — now we fail closed). Set
+    // SYNC_SECRET in Vercel env and configure the OpenClaw side to send
+    //   Authorization: Bearer <SYNC_SECRET>
+    if (!SYNC_SECRET) {
+      console.error('[OpenClaw Webhook] SYNC_SECRET not set on server — refusing all requests')
+      return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+    }
+    if (authHeader !== `Bearer ${SYNC_SECRET}`) {
       console.error('[OpenClaw Webhook] Unauthorized - Invalid or missing SYNC_SECRET')
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
     console.log('[OpenClaw Webhook] Authorized request received')
