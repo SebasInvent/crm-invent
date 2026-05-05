@@ -4,13 +4,12 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import { supabase } from '@/lib/supabase'
-import { 
-  Users, 
-  Plus, 
-  Search, 
-  Target, 
+import { LeadFilters } from '@/components/leads/LeadFilters'
+import {
+  Users,
+  Plus,
+  Target,
   Flame,
   Thermometer,
   Snowflake,
@@ -23,7 +22,7 @@ import {
   Phone,
   Globe,
   Calendar,
-  ArrowRight
+  ArrowRight,
 } from 'lucide-react'
 import type { Lead } from '@/types/database'
 
@@ -57,18 +56,32 @@ const priorityConfig = {
   low: 'bg-gray-500 text-white'
 }
 
-async function getLeads(): Promise<Lead[]> {
-  const { data: leads, error } = await supabase
+interface LeadFilters {
+  status?: string
+  archetype?: string
+  q?: string
+}
+
+async function getLeads(filters: LeadFilters = {}): Promise<Lead[]> {
+  let query = supabase
     .from('leads')
     .select('*')
     .order('lead_score', { ascending: false })
     .limit(50)
 
+  if (filters.status) query = query.eq('lead_status', filters.status)
+  if (filters.archetype) query = query.eq('jung_archetype', filters.archetype)
+  if (filters.q) {
+    // Search across name, email, company (tablename ilike or)
+    const term = filters.q.replace(/[%]/g, '')
+    query = query.or(`name.ilike.%${term}%,email.ilike.%${term}%,company.ilike.%${term}%`)
+  }
+
+  const { data: leads, error } = await query
   if (error) {
     console.error('Error fetching leads:', error)
     return []
   }
-
   return (leads as Lead[]) || []
 }
 
@@ -97,8 +110,22 @@ async function getLeadStats() {
   return totals
 }
 
-export default async function LeadsPage() {
-  const leads = await getLeads()
+export default async function LeadsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
+  const sp = await searchParams
+  const pickStr = (v: string | string[] | undefined) =>
+    typeof v === 'string' ? v : Array.isArray(v) ? v[0] : undefined
+
+  const filters = {
+    status: pickStr(sp.status),
+    archetype: pickStr(sp.archetype),
+    q: pickStr(sp.q),
+  }
+
+  const leads = await getLeads(filters)
   const stats = await getLeadStats()
 
   return (
@@ -185,31 +212,8 @@ export default async function LeadsPage() {
         </Card>
       </div>
 
-      {/* Filters & Search */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-          <Input 
-            placeholder="Buscar por nombre, empresa, email..." 
-            className="pl-9"
-          />
-        </div>
-        <div className="flex gap-2">
-          <select className="px-3 py-2 border rounded-md text-sm">
-            <option value="">Todos los estados</option>
-            <option value="hot">Hot</option>
-            <option value="warm">Warm</option>
-            <option value="cold">Cold</option>
-            <option value="converted">Convertidos</option>
-          </select>
-          <select className="px-3 py-2 border rounded-md text-sm">
-            <option value="">Todos los arquetipos</option>
-            {Object.entries(archetypeLabels).map(([key, { label }]) => (
-              <option key={key} value={key}>{label}</option>
-            ))}
-          </select>
-        </div>
-      </div>
+      {/* Filters & Search — wired to URL params via client component */}
+      <LeadFilters archetypeLabels={archetypeLabels} />
 
       {/* Leads Table */}
       <Card>
