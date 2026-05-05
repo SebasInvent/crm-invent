@@ -1,13 +1,13 @@
 import Link from 'next/link'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { getServiceRoleClient } from '@/lib/supabase'
+import { NewClientDialog } from '@/components/clients/NewClientDialog'
 
 export const dynamic = 'force-dynamic'
 
-import { Search, Plus, Mail, Phone, Building2 } from 'lucide-react'
+import { Search, Mail, Phone, Building2 } from 'lucide-react'
 
 async function getClients() {
   const supabase = getServiceRoleClient()
@@ -47,15 +47,12 @@ export default async function ClientsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold text-white">Clientes</h1>
           <p className="text-zinc-400 mt-1">Gestiona tus clientes y leads</p>
         </div>
-        <Button className="bg-white text-black hover:bg-zinc-200">
-          <Plus className="h-4 w-4 mr-2" />
-          Nuevo Cliente
-        </Button>
+        <NewClientDialog />
       </div>
 
       <Card className="bg-zinc-950 border-zinc-800">
