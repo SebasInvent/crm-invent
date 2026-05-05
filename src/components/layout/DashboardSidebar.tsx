@@ -135,6 +135,26 @@ export function DashboardSidebar() {
           </button>
         </div>
 
+        {/* Search hint — Cmd+K opens the global command palette */}
+        <button
+          type="button"
+          onClick={() => {
+            // Trigger Cmd+K event so the palette opens. Cleaner than
+            // exposing a context — the palette listens for the keydown.
+            window.dispatchEvent(
+              new KeyboardEvent('keydown', { key: 'k', metaKey: true }),
+            )
+          }}
+          className="hidden md:flex items-center justify-between mx-3 mt-3 mb-1 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 hover:border-zinc-700 transition-colors text-xs text-zinc-500 hover:text-zinc-300"
+        >
+          <span className="flex items-center gap-2">
+            <span>Buscar...</span>
+          </span>
+          <kbd className="inline-flex items-center font-mono text-[10px] uppercase tracking-wider bg-zinc-950 border border-zinc-800 rounded px-1.5 py-0.5">
+            ⌘ K
+          </kbd>
+        </button>
+
         <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
           {navigation.map((item) => {
             const isActive =

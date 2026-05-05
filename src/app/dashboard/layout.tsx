@@ -1,4 +1,5 @@
 import { DashboardSidebar } from '@/components/layout/DashboardSidebar'
+import { CommandPalette } from '@/components/layout/CommandPalette'
 
 export default function DashboardLayout({
   children,
@@ -17,6 +18,9 @@ export default function DashboardLayout({
           {children}
         </main>
       </div>
+
+      {/* Cmd+K palette — globally available across the dashboard */}
+      <CommandPalette />
     </div>
   )
 }
