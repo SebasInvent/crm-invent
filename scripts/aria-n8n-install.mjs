@@ -112,20 +112,39 @@ const updated = {
   connections,
 }
 
-// PATCH back. n8n's API expects the full workflow body on PUT.
+// n8n's PUT validator rejects unknown keys in `settings` (the GET
+// response sometimes includes things like callerPolicy that the
+// PUT schema doesn't accept). Whitelist only documented keys and
+// drop the rest. staticData is also flaky — only include if non-null.
+const ALLOWED_SETTINGS_KEYS = new Set([
+  'executionOrder',
+  'saveDataErrorExecution',
+  'saveDataSuccessExecution',
+  'saveExecutionProgress',
+  'saveManualExecutions',
+  'timezone',
+  'executionTimeout',
+  'errorWorkflow',
+])
+const cleanSettings = Object.fromEntries(
+  Object.entries(updated.settings ?? {}).filter(([k]) => ALLOWED_SETTINGS_KEYS.has(k)),
+)
+
+const body = {
+  name: updated.name,
+  nodes: updated.nodes,
+  connections: updated.connections,
+  settings: cleanSettings,
+}
+if (updated.staticData) body.staticData = updated.staticData
+
 console.log(`→ Pushing updated workflow (${toAdd.length} new tools)…`)
 const updateRes = await fetch(
   `${baseUrl}/api/v1/workflows/${N8N_WORKFLOW_ID}`,
   {
     method: 'PUT',
     headers,
-    body: JSON.stringify({
-      name: updated.name,
-      nodes: updated.nodes,
-      connections: updated.connections,
-      settings: updated.settings ?? {},
-      staticData: updated.staticData ?? null,
-    }),
+    body: JSON.stringify(body),
   },
 )
 if (!updateRes.ok) {
