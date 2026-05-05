@@ -1,23 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { getServiceRoleClient } from '@/lib/supabase'
+import { requireAuth } from '@/lib/api-auth'
 
 const EVO_URL = 'https://ievoapi.inventagency.co'
-const EVO_KEY = process.env.EVOLUTION_API_KEY || '5D48F2C0DCBE-407D-B489-DC29D1FCF608'
+const EVO_KEY = process.env.EVOLUTION_API_KEY
 const EVO_INSTANCE = process.env.EVOLUTION_INSTANCE || 'Invent'
+
+const sendWaSchema = z.object({
+  phone: z.string().min(8).max(20),
+  text: z.string().min(1).max(4096),
+  threadId: z.string().uuid().optional(),
+})
 
 /**
  * Envía un mensaje manual desde el CRM:
  * 1. Lo guarda en chat_messages (sender='human')
  * 2. Pausa el bot para esa conversación (bot_active=false)
  * 3. Llama a Evolution API para enviar el WhatsApp
+ *
+ * 🔐 Auth required.
  */
 export async function POST(req: NextRequest) {
-  try {
-    const { phone, text, threadId } = await req.json()
+  const auth = await requireAuth()
+  if (auth.error) return auth.error
 
-    if (!phone || !text) {
-      return NextResponse.json({ error: 'phone y text son requeridos' }, { status: 400 })
+  if (!EVO_KEY) {
+    return NextResponse.json(
+      { error: 'EVOLUTION_API_KEY env var not configured on server' },
+      { status: 500 }
+    )
+  }
+
+  try {
+    const body = await req.json()
+    const parsed = sendWaSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid body', details: parsed.error.flatten() },
+        { status: 400 }
+      )
     }
+    const { phone, text, threadId } = parsed.data
 
     const cleanPhone = String(phone).replace(/[^0-9]/g, '')
     const supabase = getServiceRoleClient()

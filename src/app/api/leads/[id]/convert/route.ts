@@ -1,12 +1,17 @@
 // @ts-nocheck
 import { NextResponse } from 'next/server'
 import { getServiceRoleClient } from '@/lib/supabase'
+import { requireAuth } from '@/lib/api-auth'
 
 // POST /api/leads/[id]/convert - Convertir lead a cliente
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
+  // 🔐 Auth required — converting a lead changes CRM state
+  const auth = await requireAuth()
+  if (auth.error) return auth.error
+
   try {
     const leadId = params.id
     const supabase = getServiceRoleClient()

@@ -1,9 +1,14 @@
 // @ts-nocheck
 import { NextResponse } from 'next/server'
 import { getServiceRoleClient } from '@/lib/supabase'
+import { requireAuth } from '@/lib/api-auth'
 
 // POST /api/campaigns/email - Enviar campaña de correos
 export async function POST(request: Request) {
+  // 🔐 Email campaigns can only be triggered by an authenticated user
+  const auth = await requireAuth()
+  if (auth.error) return auth.error
+
   try {
     const body = await request.json()
     const { 
