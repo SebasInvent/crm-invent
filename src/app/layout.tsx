@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
+import { Toaster } from 'sonner'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -53,6 +54,17 @@ export default function RootLayout({
       </head>
       <body className={inter.className}>
         {children}
+        <Toaster
+          richColors
+          closeButton
+          theme="dark"
+          position="top-right"
+          toastOptions={{
+            classNames: {
+              toast: 'bg-zinc-900 border-zinc-800 text-zinc-100',
+            },
+          }}
+        />
         <script
           dangerouslySetInnerHTML={{
             __html: `
