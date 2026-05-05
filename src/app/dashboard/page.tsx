@@ -13,10 +13,33 @@ import {
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Returns the ISO timestamp for the start of "today" in Bogotá time (UTC-5).
+ *
+ * Naive `new Date(year, month, day)` interprets the components as the
+ * server's local timezone. On Vercel that is UTC, so for any user in UTC-5
+ * the result is *yesterday* between 19:00 and 23:59 local. This bug made
+ * "Hot leads today" show yesterday's count every evening.
+ */
+function startOfDayBogotaIso(): string {
+  // Bogotá is UTC-5 year-round (no DST).
+  const offsetMs = 5 * 60 * 60 * 1000
+  const nowUtcMs = Date.now()
+  const bogotaMs = nowUtcMs - offsetMs
+  const bogotaDate = new Date(bogotaMs)
+  // Build a UTC midnight that, when shifted +5h, lands at Bogotá midnight today.
+  const utcStart = Date.UTC(
+    bogotaDate.getUTCFullYear(),
+    bogotaDate.getUTCMonth(),
+    bogotaDate.getUTCDate(),
+  ) + offsetMs
+  return new Date(utcStart).toISOString()
+}
+
 async function getSalesStats() {
   const supabase = getServiceRoleClient()
   const now = new Date()
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+  const startOfDay = startOfDayBogotaIso()
   const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
   // Run queries in parallel
