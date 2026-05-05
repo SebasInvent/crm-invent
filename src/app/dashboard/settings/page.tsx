@@ -1,13 +1,28 @@
-export default function SettingsPage() {
+import { redirect } from 'next/navigation'
+import { getApiSession } from '@/lib/api-auth'
+import { SettingsClient } from '@/components/settings/SettingsClient'
+
+export const dynamic = 'force-dynamic'
+
+/**
+ * /dashboard/settings
+ *
+ * Server component: pulls the session on the server and forwards safe
+ * fields to the client. Anything sensitive (password, recovery tokens)
+ * stays out — only user-visible profile fields get sent across.
+ */
+export default async function SettingsPage() {
+  const session = await getApiSession()
+  if (!session) redirect('/login')
+
+  const user = session.user
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-white">Configuración</h1>
-        <p className="text-zinc-400 mt-1">Configura tu CRM</p>
-      </div>
-      <div className="p-12 text-center border border-zinc-800 rounded-lg bg-zinc-950">
-        <p className="text-zinc-500">Configuración en desarrollo</p>
-      </div>
-    </div>
+    <SettingsClient
+      email={user.email ?? '—'}
+      userId={user.id}
+      createdAt={user.created_at}
+      lastSignInAt={user.last_sign_in_at ?? null}
+      provider={user.app_metadata?.provider ?? 'email'}
+    />
   )
 }

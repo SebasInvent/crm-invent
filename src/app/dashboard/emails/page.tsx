@@ -32,7 +32,11 @@ export default async function EmailsPage() {
           <h1 className="text-3xl font-bold text-white">Emails</h1>
           <p className="text-zinc-400 mt-1">Envía emails y revisa el historial</p>
         </div>
-        <Button className="bg-white text-black hover:bg-zinc-200">
+        <Button
+          disabled
+          className="bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Próximamente — composer de email integrado"
+        >
           <Send className="h-4 w-4 mr-2" />
           Nuevo Email
         </Button>

@@ -44,7 +44,11 @@ export default async function ProjectsPage() {
           <h1 className="text-3xl font-bold text-white">Proyectos</h1>
           <p className="text-zinc-400 mt-1">Gestiona tus proyectos activos</p>
         </div>
-        <Button className="bg-white text-black hover:bg-zinc-200">
+        <Button
+          disabled
+          className="bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Próximamente — proyectos derivados de deals cerrados"
+        >
           <Plus className="h-4 w-4 mr-2" />
           Nuevo Proyecto
         </Button>
