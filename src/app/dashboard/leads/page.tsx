@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { supabase } from '@/lib/supabase'
 import { LeadFilters } from '@/components/leads/LeadFilters'
+import { LeadsTable } from '@/components/leads/LeadsTable'
 import { EmptyState } from '@/components/ui/empty-state'
 import {
   Users,
@@ -248,117 +249,7 @@ export default async function LeadsPage({
               }
             />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium">Lead</th>
-                    <th className="text-left py-3 px-4 font-medium">Arquetipo</th>
-                    <th className="text-left py-3 px-4 font-medium">Score</th>
-                    <th className="text-left py-3 px-4 font-medium">Estado</th>
-                    <th className="text-left py-3 px-4 font-medium">Prioridad</th>
-                    <th className="text-left py-3 px-4 font-medium">Próximo Contacto</th>
-                    <th className="text-left py-3 px-4 font-medium">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {leads.map((lead) => {
-                    const StatusIcon = statusConfig[lead.lead_status as keyof typeof statusConfig]?.icon || Snowflake
-                    const archetype = lead.jung_archetype ? archetypeLabels[lead.jung_archetype] : null
-                    
-                    return (
-                      <tr key={lead.id} className="border-b hover:bg-muted/50">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center font-semibold">
-                              {lead.name.charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <p className="font-medium">{lead.name}</p>
-                              <p className="text-sm text-muted-foreground">{lead.company}</p>
-                              {lead.industry && (
-                                <Badge variant="outline" className="text-xs mt-1">
-                                  {lead.industry}
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          {archetype ? (
-                            <Badge className={archetype.color}>
-                              <span className="mr-1">{archetype.icon}</span>
-                              {archetype.label}
-                            </Badge>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">-</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-16 bg-gray-200 rounded-full h-2">
-                              <div 
-                                className="bg-primary h-2 rounded-full" 
-                                style={{ width: `${lead.lead_score}%` }}
-                              />
-                            </div>
-                            <span className="text-sm font-medium">{lead.lead_score}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <Badge 
-                            variant="outline" 
-                            className={statusConfig[lead.lead_status as keyof typeof statusConfig]?.color}
-                          >
-                            <StatusIcon className="h-3 w-3 mr-1" />
-                            {statusConfig[lead.lead_status as keyof typeof statusConfig]?.label}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-4">
-                          <Badge className={priorityConfig[lead.priority as keyof typeof priorityConfig]}>
-                            {lead.priority}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-4">
-                          {lead.next_follow_up_date ? (
-                            <div className="flex items-center gap-1 text-sm">
-                              <Calendar className="h-4 w-4" />
-                              {new Date(lead.next_follow_up_date).toLocaleDateString('es-CO')}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">-</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex gap-1">
-                            <Link href={`/dashboard/leads/${lead.id}`}>
-                              <Button variant="ghost" size="sm">
-                                Ver
-                                <ArrowRight className="h-4 w-4 ml-1" />
-                              </Button>
-                            </Link>
-                            {lead.email && (
-                              <a href={`mailto:${lead.email}`}>
-                                <Button variant="ghost" size="icon">
-                                  <Mail className="h-4 w-4" />
-                                </Button>
-                              </a>
-                            )}
-                            {lead.phone && (
-                              <a href={`tel:${lead.phone}`}>
-                                <Button variant="ghost" size="icon">
-                                  <Phone className="h-4 w-4" />
-                                </Button>
-                              </a>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <LeadsTable leads={leads as any} archetypeLabels={archetypeLabels} />
           )}
         </CardContent>
       </Card>
