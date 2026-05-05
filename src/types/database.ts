@@ -288,6 +288,91 @@ export interface PipelineData {
 export type Database = {
   public: {
     Tables: {
+      contacts: {
+        Row: {
+          id: string;
+          first_name: string;
+          last_name?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          company_name?: string | null;
+          type: string;
+          status: string;
+          lead_score: number;
+          priority: string;
+          assigned_to?: string | null;
+          source: string;
+          tags: string[];
+          created_at: string;
+          updated_at: string;
+          last_interaction_at?: string | null;
+          lifetime_value: number;
+          telegram_chat_id?: string | null;
+          openclaw_session_id?: string | null;
+        };
+        Insert: {
+          first_name: string;
+          last_name?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          company_name?: string | null;
+          type?: string;
+          status?: string;
+          lead_score?: number;
+          priority?: string;
+          assigned_to?: string | null;
+          source?: string;
+          tags?: string[];
+        };
+        Update: Partial<Database['public']['Tables']['contacts']['Insert']>;
+      };
+      deals: {
+        Row: {
+          id: string;
+          contact_id: string;
+          name: string;
+          description?: string | null;
+          stage_id?: string | null;
+          value: number;
+          currency: string;
+          probability: number;
+          expected_close_date?: string | null;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          contact_id: string;
+          name: string;
+          description?: string | null;
+          stage_id?: string | null;
+          value?: number;
+          currency?: string;
+          probability?: number;
+          expected_close_date?: string | null;
+          status?: string;
+        };
+        Update: Partial<Database['public']['Tables']['deals']['Insert']>;
+      };
+      pipeline_stages: {
+        Row: {
+          id: string;
+          name: string;
+          order_index: number;
+          color: string;
+          default_probability: number;
+          is_active: boolean;
+        };
+        Insert: {
+          pipeline_id: string;
+          name: string;
+          order_index: number;
+          color?: string;
+          default_probability?: number;
+          is_active?: boolean;
+        };
+        Update: Partial<Database['public']['Tables']['pipeline_stages']['Insert']>;
+      };
       clients: {
         Row: Client;
         Insert: Omit<Client, 'id' | 'created_at'> & { id?: string; created_at?: string };

@@ -3,13 +3,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { supabase } from '@/lib/supabase'
+import { getServiceRoleClient } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
 import { Search, Plus, Mail, Phone, Building2 } from 'lucide-react'
 
 async function getClients() {
+  const supabase = getServiceRoleClient()
   const { data, error } = await supabase
     .from('clients')
     .select('*')

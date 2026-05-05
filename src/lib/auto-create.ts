@@ -1,104 +1,145 @@
 // @ts-nocheck
 import { getServiceRoleClient } from '@/lib/supabase'
-import type { Client, Project, Task, ChatSession, Conversation } from '@/types/database'
+import type { Contact, Project, Task, ChatSession, Conversation } from '@/types/database'
 
-interface CreateClientFromInteractionParams {
+interface CreateContactFromInteractionParams {
   name: string;
   email?: string;
   phone?: string;
   company?: string;
-  source: 'telegram' | 'openclaw' | 'whatsapp' | 'web' | 'other';
-  external_id?: string; // telegram_chat_id, openclaw_session_id, etc.
+  source: 'telegram' | 'openclaw' | 'whatsapp' | 'web' | 'other' | 'email';
+  external_id?: string;
   username?: string;
   metadata?: Record<string, any>;
 }
 
 interface AutoCreateResult {
-  client: Client;
+  contact: Contact;
   project?: Project;
   task?: Task;
   is_new: boolean;
 }
 
 /**
- * Busca un cliente existente por email o external_id
+ * Busca un contacto existente por email, phone o external_id
  */
-export async function findExistingClient(
+export async function findExistingContact(
   email?: string,
+  phone?: string,
   external_id?: string,
   source?: string
-): Promise<Client | null> {
+): Promise<Contact | null> {
   const supabase = getServiceRoleClient()
 
-  // Buscar por email
-  if (email) {
-    const { data: byEmail } = await supabase
-      .from('clients')
+  // Buscar por email primero (más confiable)
+  if (email && email !== '') {
+    const { data: byEmail, error: emailError } = await supabase
+      .from('contacts')
       .select('*')
-      .eq('email', email)
-      .single()
+      .ilike('email', email)
+      .maybeSingle()
     if (byEmail) return byEmail
+    if (emailError && emailError.code !== 'PGRST116') {
+      console.error('[findExistingContact] Error buscando por email:', emailError)
+    }
   }
 
-  // Buscar por external_id según el source
-  if (external_id && source) {
-    let query = supabase.from('clients').select('*')
-    
-    if (source === 'telegram') {
-      query = query.eq('telegram_chat_id', external_id)
-    } else if (source === 'openclaw') {
-      query = query.eq('openclaw_session_id', external_id)
+  // Buscar por teléfono
+  if (phone && phone !== '') {
+    const { data: byPhone, error: phoneError } = await supabase
+      .from('contacts')
+      .select('*')
+      .ilike('phone', phone)
+      .maybeSingle()
+    if (byPhone) return byPhone
+    if (phoneError && phoneError.code !== 'PGRST116') {
+      console.error('[findExistingContact] Error buscando por phone:', phoneError)
     }
+  }
+
+  // Buscar por external_id en custom_fields según el source
+  if (external_id && source) {
+    const fieldName = source === 'telegram' 
+      ? 'telegram_chat_id' 
+      : source === 'openclaw' 
+        ? 'openclaw_session_id' 
+        : `${source}_id`
     
-    const { data: byExternal } = await query.single()
+    const { data: byExternal, error: externalError } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('custom_fields->>' + fieldName, external_id)
+      .maybeSingle()
+    
     if (byExternal) return byExternal
+    if (externalError && externalError.code !== 'PGRST116') {
+      console.error(`[findExistingContact] Error buscando por ${fieldName}:`, externalError)
+    }
   }
 
   return null
 }
 
+// Mantener compatibilidad con código antiguo
+export const findExistingClient = findExistingContact
+
 /**
- * Crea un nuevo cliente desde una interacción
+ * Crea un nuevo contacto desde una interacción
  */
-export async function createClientFromInteraction(
-  params: CreateClientFromInteractionParams
-): Promise<Client> {
+export async function createContactFromInteraction(
+  params: CreateContactFromInteractionParams
+): Promise<Contact> {
   const supabase = getServiceRoleClient()
 
-  const clientData: Partial<Client> = {
-    name: params.name,
+  // Separar nombre en first_name y last_name
+  const nameParts = params.name?.split(' ') || ['Sin', 'Nombre']
+  const firstName = nameParts[0] || 'Sin'
+  const lastName = nameParts.slice(1).join(' ') || 'Nombre'
+
+  const contactData: any = {
+    first_name: firstName,
+    last_name: lastName,
     email: params.email || `temp_${Date.now()}@placeholder.com`,
     phone: params.phone || null,
-    company: params.company || null,
-    status: 'lead',
-    priority: 'medium',
-    lifetime_value: 0,
-    source: params.source,
-    metadata: params.metadata || null,
+    company_name: params.company || null,
+    type: 'lead',
+    status: 'active',
+    lead_source: params.source,
     last_interaction_at: new Date().toISOString()
   }
 
-  // Agregar campos específicos según el source
+  // Agregar campos específicos según el source en custom_fields
+  const customFields: Record<string, any> = params.metadata || {}
+  
   if (params.source === 'telegram' && params.external_id) {
-    clientData.telegram_chat_id = params.external_id
-    clientData.telegram_username = params.username
+    customFields.telegram_chat_id = params.external_id
+    customFields.telegram_username = params.username
   } else if (params.source === 'openclaw' && params.external_id) {
-    clientData.openclaw_session_id = params.external_id
+    customFields.openclaw_session_id = params.external_id
+  } else if (params.external_id) {
+    customFields[`${params.source}_id`] = params.external_id
   }
 
-  const { data: client, error } = await supabase
-    .from('clients')
-    .insert(clientData)
+  if (Object.keys(customFields).length > 0) {
+    contactData.custom_fields = customFields
+  }
+
+  const { data: contact, error } = await supabase
+    .from('contacts')
+    .insert(contactData)
     .select()
     .single()
 
   if (error) {
-    console.error('Error creating client:', error)
-    throw new Error(`Failed to create client: ${error.message}`)
+    console.error('[createContactFromInteraction] Error creating contact:', error)
+    throw new Error(`Failed to create contact: ${error.message}`)
   }
 
-  return client
+  return contact
 }
+
+// Mantener compatibilidad con código antiguo
+export const createClientFromInteraction = createContactFromInteraction
 
 /**
  * Crea un proyecto automáticamente para un cliente
@@ -221,60 +262,68 @@ export async function createOrUpdateChatSession(
 }
 
 /**
- * Proceso completo: busca o crea cliente, proyecto, tarea y sesión
+ * Proceso completo: busca o crea contacto, proyecto, tarea y sesión
  */
 export async function processNewInteraction(
   params: {
     name: string;
     email?: string;
+    phone?: string;
     message: string;
-    source: 'telegram' | 'openclaw' | 'whatsapp' | 'web' | 'other';
+    source: 'telegram' | 'openclaw' | 'whatsapp' | 'web' | 'other' | 'email';
     external_id: string;
     username?: string;
     agent_id?: string;
     metadata?: Record<string, any>;
   }
 ): Promise<AutoCreateResult> {
-  // 1. Buscar cliente existente
-  let client = await findExistingClient(params.email, params.external_id, params.source)
+  // 1. Buscar contacto existente (por email, phone o external_id)
+  let contact = await findExistingContact(params.email, params.phone, params.external_id, params.source)
   let isNew = false
 
-  // 2. Crear cliente si no existe
-  if (!client) {
-    client = await createClientFromInteraction({
+  // 2. Crear contacto si no existe
+  if (!contact) {
+    contact = await createContactFromInteraction({
       name: params.name,
       email: params.email,
+      phone: params.phone,
       source: params.source,
       external_id: params.external_id,
       username: params.username,
       metadata: params.metadata
     })
     isNew = true
+    console.log(`[processNewInteraction] Nuevo contacto creado: ${contact.id} (${contact.email})`)
   } else {
+    console.log(`[processNewInteraction] Contacto existente encontrado: ${contact.id} (${contact.email})`)
+    
     // Actualizar last_interaction_at
     const supabase = getServiceRoleClient()
     await supabase
-      .from('clients')
+      .from('contacts')
       .update({ last_interaction_at: new Date().toISOString() })
-      .eq('id', client.id)
+      .eq('id', contact.id)
   }
 
   let project: Project | undefined
   let task: Task | undefined
 
-  // 3. Si es cliente nuevo, crear proyecto y tarea
+  // 3. Si es contacto nuevo, crear proyecto y tarea
   if (isNew) {
-    project = await createAutoProject(client.id, params.source, params.message)
+    project = await createAutoProject(contact.id, params.source, params.message)
     await createInitialTask(project.id, params.name, params.message, params.source)
   }
 
   // 4. Crear o actualizar sesión de chat
   await createOrUpdateChatSession(
-    client.id,
+    contact.id,
     params.external_id,
     params.source,
     params.agent_id
   )
 
-  return { client, project, task, is_new: isNew }
+  return { contact, project, task, is_new: isNew }
 }
+
+// Mantener compatibilidad con código antiguo
+export const processNewClient = processNewInteraction

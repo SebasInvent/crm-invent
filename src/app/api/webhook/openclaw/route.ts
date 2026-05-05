@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { NextResponse } from 'next/server'
 import { getServiceRoleClient } from '@/lib/supabase'
-import { processNewInteraction } from '@/lib/auto-create'
+import { contactService } from '@/lib/contact-service'
 
 // Tipos de eventos que puede recibir de OpenClaw/Sincronía
 type OpenClawEvent = 
@@ -120,14 +120,14 @@ async function handleConversationStarted(payload: OpenClawPayload, supabase: any
   }
 
   try {
-    // Procesar nueva interacción (busca o crea cliente, sesión, etc.)
-    const result = await processNewInteraction({
-      name: clientData.name,
+    // Buscar o crear contacto usando el servicio unificado
+    const result = await contactService.findOrCreate({
       email: clientData.email,
-      source: 'openclaw',
+      phone: clientData.phone,
       external_id: session_id,
-      username: clientData.name,
-      agent_id: data.agent?.id,
+      source: 'openclaw',
+      name: clientData.name,
+      company: clientData.company,
       metadata: {
         session_id,
         event: 'conversation.started',
@@ -135,15 +135,31 @@ async function handleConversationStarted(payload: OpenClawPayload, supabase: any
       }
     })
 
+    // Crear sesión de chat
+    const { error: sessionError } = await supabase
+      .from('chat_sessions')
+      .insert({
+        contact_id: result.contact.id,
+        external_session_id: session_id,
+        channel: 'openclaw',
+        status: 'active',
+        agent_id: data.agent?.id,
+        started_at: new Date().toISOString(),
+        metadata: data.metadata
+      })
+
+    if (sessionError) {
+      console.error('[OpenClaw] Error creando sesión:', sessionError)
+    }
+
     return NextResponse.json({
       success: true,
       event: 'conversation.started',
-      client_id: result.client.id,
-      is_new_client: result.is_new,
-      project_id: result.project?.id,
+      contact_id: result.contact.id,
+      is_new_contact: result.is_new,
       message: result.is_new 
-        ? 'New client and project created automatically'
-        : 'Existing client session updated'
+        ? 'New contact created and session started'
+        : 'Existing contact session updated'
     })
 
   } catch (error) {
@@ -169,51 +185,44 @@ async function handleConversationMessage(payload: OpenClawPayload, supabase: any
   }
 
   try {
-    // Buscar cliente por openclaw_session_id
-    console.log(`[OpenClaw] Buscando cliente por session_id: ${session_id}`)
+    // Buscar o crear contacto
+    let contactId: string
+    let isNewContact = false
     
-    const { data: existingClient, error: findError } = await supabase
-      .from('clients')
-      .select('*')
-      .eq('openclaw_session_id', session_id)
-      .maybeSingle()
-    
-    if (findError) {
-      console.error('[OpenClaw] Error buscando cliente:', findError)
-    }
+    const existingContact = await contactService.findContact(
+      clientData.email,
+      clientData.phone,
+      session_id,
+      'openclaw'
+    )
 
-    let clientId = existingClient?.id
-    let isNewClient = false
-
-    // Si no existe, crear nuevo
-    if (!existingClient) {
-      console.log('[OpenClaw] Cliente no encontrado, creando nuevo...')
-      isNewClient = true
-      
-      const result = await processNewInteraction({
-        name: clientData.name,
-        email: clientData.email,
-        message: message.content,
-        source: 'openclaw',
-        external_id: session_id,
-        agent_id: data.agent?.id,
-        metadata: { session_id, ...data.metadata }
-      })
-      clientId = result.client.id
-      console.log('[OpenClaw] Nuevo cliente creado:', clientId)
-    } else {
-      console.log('[OpenClaw] Cliente existente encontrado:', clientId)
+    if (existingContact) {
+      contactId = existingContact.id
+      console.log('[OpenClaw] Contacto existente encontrado:', contactId)
       
       // Actualizar timestamp de última interacción
-      await supabase
-        .from('clients')
-        .update({ last_interaction_at: new Date().toISOString() })
-        .eq('id', existingClient.id)
+      await contactService.updateLastInteraction(contactId)
+    } else {
+      console.log('[OpenClaw] Contacto no encontrado, creando nuevo...')
+      isNewContact = true
+      
+      const newContact = await contactService.createContact({
+        name: clientData.name,
+        email: clientData.email,
+        phone: clientData.phone,
+        company: clientData.company,
+        source: 'openclaw',
+        external_id: session_id,
+        metadata: data.metadata
+      })
+      
+      contactId = newContact.id
+      console.log('[OpenClaw] Nuevo contacto creado:', contactId)
     }
 
     // Guardar mensaje en conversations
     const conversationData = {
-      client_id: clientId,
+      contact_id: contactId,
       message: message.content,
       channel: 'other',
       openclaw_session_id: session_id,
@@ -241,8 +250,8 @@ async function handleConversationMessage(payload: OpenClawPayload, supabase: any
       success: true,
       event: 'conversation.message',
       conversation_id: conversation.id,
-      client_id: clientId,
-      is_new_client: isNewClient
+      contact_id: contactId,
+      is_new_contact: isNewContact
     })
 
   } catch (error) {
@@ -274,7 +283,7 @@ async function handleConversationEnded(payload: OpenClawPayload, supabase: any) 
     // Crear resumen si hay datos
     if (data.metadata?.summary) {
       await supabase.from('conversations').insert({
-        client_id: session?.client_id,
+        contact_id: session?.contact_id,
         message: `[RESUMEN DE SESIÓN] ${data.metadata.summary}`,
         channel: 'other',
         openclaw_session_id: session_id,
@@ -312,20 +321,20 @@ async function handleClientCreated(payload: OpenClawPayload, supabase: any) {
   }
 
   try {
-    const result = await processNewInteraction({
-      name: clientData.name,
+    const result = await contactService.findOrCreate({
       email: clientData.email,
       phone: clientData.phone,
-      company: clientData.company,
-      source: 'openclaw',
       external_id: payload.session_id,
+      source: 'openclaw',
+      name: clientData.name,
+      company: clientData.company,
       metadata: { ...data.metadata, source_event: 'client.created' }
     })
 
     return NextResponse.json({
       success: true,
       event: 'client.created',
-      client_id: result.client.id,
+      contact_id: result.contact.id,
       is_new: result.is_new
     })
 
@@ -350,33 +359,35 @@ async function handleProjectRequested(payload: OpenClawPayload, supabase: any) {
   }
 
   try {
-    // Buscar o crear cliente
-    let clientId: string
-    const { data: existingClient } = await supabase
-      .from('clients')
-      .select('id')
-      .eq('openclaw_session_id', session_id)
-      .single()
+    // Buscar o crear contacto
+    let contactId: string
+    const existingContact = await contactService.findContact(
+      data.client.email,
+      data.client.phone,
+      session_id,
+      'openclaw'
+    )
 
-    if (existingClient) {
-      clientId = existingClient.id
+    if (existingContact) {
+      contactId = existingContact.id
     } else {
-      const result = await processNewInteraction({
-        name: data.client.name,
+      const result = await contactService.findOrCreate({
         email: data.client.email,
-        message: `Solicitud de proyecto: ${data.project.name}`,
-        source: 'openclaw',
+        phone: data.client.phone,
         external_id: session_id,
+        source: 'openclaw',
+        name: data.client.name,
+        company: data.client.company,
         metadata: data.metadata
       })
-      clientId = result.client.id
+      contactId = result.contact.id
     }
 
     // Crear proyecto
     const { data: project, error: projectError } = await supabase
       .from('projects')
       .insert({
-        client_id: clientId,
+        contact_id: contactId,
         name: data.project.name,
         description: data.project.description || `Proyecto solicitado vía OpenClaw`,
         budget: data.project.budget || null,
@@ -403,7 +414,7 @@ async function handleProjectRequested(payload: OpenClawPayload, supabase: any) {
       success: true,
       event: 'project.requested',
       project_id: project.id,
-      client_id: clientId
+      contact_id: contactId
     })
 
   } catch (error) {
