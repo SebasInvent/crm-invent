@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { supabase } from '@/lib/supabase'
 import { LeadFilters } from '@/components/leads/LeadFilters'
 import { LeadsTable } from '@/components/leads/LeadsTable'
+import { SavedViews } from '@/components/saved-views/SavedViews'
 import { EmptyState } from '@/components/ui/empty-state'
 import {
   Users,
@@ -143,7 +144,8 @@ export default async function LeadsPage({
             Gestiona prospectos basados en la metodología Jung
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <SavedViews entity="leads" filterKeys={['status', 'archetype', 'q']} />
           <Link href="/dashboard/leads/scrape">
             <Button variant="outline">
               <Globe className="h-4 w-4 mr-2" />
