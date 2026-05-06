@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ import {
   useSupabaseMutation,
   queryKeys,
 } from '@/lib/hooks/useSupabaseQuery'
+import { ProductPicker } from '@/components/products/ProductPicker'
 import { 
   Plus, 
   Search, 
@@ -62,31 +63,77 @@ const emptyDealForm: NewDealForm = {
 export default function PipelinePage() {
   const router = useRouter()
   const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const productSlug = searchParams.get('product') ?? ''
   const [searchQuery, setSearchQuery] = useState('')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [newDeal, setNewDeal] = useState<NewDealForm>(emptyDealForm)
 
-  // ─── Three independent queries — pipeline_stages and contacts barely
-  //     change during a session, deals_full updates often.
+  // ─── 1. Resolve the selected product → its default pipeline_id +
+  //     stages. The kanban now filters strictly by pipeline so each
+  //     vertical (Foody, Veralix, Dental OS, etc.) shows only its own
+  //     funnel.
+  const { data: productMeta } = useSupabaseQuery<{
+    pipeline_id: string | null
+    product_id: string | null
+    color: string | null
+  }>({
+    queryKey: ['pipeline', 'product-meta', productSlug],
+    queryFn: async () => {
+      // Need to fetch via /api/products/[slug] for the joined
+      // pipeline + stages. We wrap that fetch in the supabase-shaped
+      // tuple so the existing useSupabaseQuery wrapper accepts it.
+      const res = await fetch(`/api/products/${productSlug}`)
+      if (!res.ok) {
+        return { data: null, error: { message: `HTTP ${res.status}` } }
+      }
+      const json = await res.json()
+      const defaultPipeline =
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ((json.pipelines as any[]) || []).find((p) => p.is_default) ||
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ((json.pipelines as any[]) || [])[0]
+      return {
+        data: {
+          pipeline_id: defaultPipeline?.id ?? null,
+          product_id: json.product?.id ?? null,
+          color: json.product?.color ?? null,
+        },
+        error: null,
+      }
+    },
+    enabled: !!productSlug,
+    staleTime: 5 * 60_000,
+  })
+
+  const pipelineId = productMeta?.pipeline_id ?? null
+  const productId = productMeta?.product_id ?? null
+
+  // ─── 2. Stages for the selected pipeline only.
   const { data: stagesData = [], isLoading: stagesLoading } = useSupabaseQuery<PipelineStage[]>({
-    queryKey: queryKeys.pipeline.stages,
+    queryKey: ['pipeline', 'stages', pipelineId],
     queryFn: () =>
       supabase
         .from('pipeline_stages')
         .select('*')
         .eq('is_active', true)
+        .eq('pipeline_id', pipelineId!)
         .order('order_index') as unknown as Promise<{ data: PipelineStage[] | null; error: { message: string } | null }>,
+    enabled: !!pipelineId,
     staleTime: 5 * 60_000,
   })
 
+  // ─── 3. Deals scoped to this product only.
   const { data: dealsData = [], isLoading: dealsLoading } = useSupabaseQuery<Deal[]>({
-    queryKey: queryKeys.pipeline.deals,
+    queryKey: ['pipeline', 'deals', productId],
     queryFn: () =>
       supabase
         .from('deals_full')
         .select('*')
         .eq('status', 'open')
+        .eq('product_id', productId!)
         .order('updated_at', { ascending: false }) as unknown as Promise<{ data: Deal[] | null; error: { message: string } | null }>,
+    enabled: !!productId,
   })
 
   const { data: contacts = [] } = useSupabaseQuery<Contact[]>({
@@ -187,6 +234,8 @@ export default function PipelinePage() {
           contact_id: input.contact_id,
           value: parseFloat(input.value) || 0,
           stage_id: input.stage_id,
+          pipeline_id: pipelineId,    // scope new deal to current pipeline
+          product_id: productId,      // tag with current product
           expected_close_date: input.expected_close_date || null,
           description: input.description || null,
           probability: stage?.probability || 0,
@@ -245,25 +294,32 @@ export default function PipelinePage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold text-white">Pipeline de Ventas</h1>
-          <p className="text-zinc-400 mt-1">Gestiona tus oportunidades comerciales</p>
+          <p className="text-zinc-400 mt-1">
+            Filtrado por producto. Cada vertical tiene su propio embudo.
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" className="border-zinc-700 text-zinc-300">
             <Filter className="h-4 w-4 mr-2" />
             Filtros
           </Button>
-          <Button 
+          <Button
             className="bg-white text-black hover:bg-zinc-200"
             onClick={() => setIsCreateDialogOpen(true)}
+            disabled={!productId}
+            title={!productId ? 'Selecciona un producto primero' : undefined}
           >
             <Plus className="h-4 w-4 mr-2" />
             Nuevo Deal
           </Button>
         </div>
       </div>
+
+      {/* Product picker — chips for each vertical */}
+      <ProductPicker />
 
       {/* KPIs */}
       <div className="grid gap-4 md:grid-cols-4">
