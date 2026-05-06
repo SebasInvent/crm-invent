@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { getServiceRoleClient } from '@/lib/supabase'
 import { Timeline } from '@/components/timeline/Timeline'
 import { Notes } from '@/components/notes/Notes'
+import { ContactEditCard } from '@/components/edit/ContactEditCard'
 import { ArrowLeft, Mail, Phone, Building2, Star, TrendingUp, Briefcase } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -141,6 +142,27 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
               </CardContent>
             </Card>
           )}
+
+          <ContactEditCard
+            contactId={params.id}
+            initial={{
+              first_name: contact.first_name,
+              last_name: contact.last_name,
+              email: contact.email,
+              phone: contact.phone,
+              mobile: contact.mobile,
+              job_title: contact.job_title,
+              company_name: contact.company_name,
+              industry: contact.industry,
+              type: contact.type,
+              status: contact.status,
+              priority: contact.priority,
+              city: contact.city,
+              country: contact.country,
+              website: contact.website,
+              linkedin_url: contact.linkedin_url,
+            }}
+          />
 
           {contact.tags && contact.tags.length > 0 && (
             <Card className="bg-zinc-950 border-zinc-800">

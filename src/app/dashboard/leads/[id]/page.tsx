@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { getServiceRoleClient } from '@/lib/supabase'
 import { Timeline } from '@/components/timeline/Timeline'
 import { Notes } from '@/components/notes/Notes'
+import { LeadEditCard } from '@/components/edit/LeadEditCard'
 import {
   ArrowLeft,
   Mail,
@@ -180,6 +181,22 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
               </CardContent>
             </Card>
           )}
+
+          <LeadEditCard
+            leadId={params.id}
+            initial={{
+              name: lead.name,
+              email: lead.email,
+              phone: lead.phone,
+              company: lead.company,
+              industry: lead.industry,
+              lead_status: lead.lead_status,
+              lead_score: lead.lead_score,
+              priority: lead.priority,
+              jung_archetype: lead.jung_archetype,
+              next_follow_up_date: lead.next_follow_up_date,
+            }}
+          />
         </div>
 
         {/* Right column: Notes + Timeline */}

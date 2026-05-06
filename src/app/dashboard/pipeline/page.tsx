@@ -117,23 +117,26 @@ export default function PipelinePage() {
     [stagesData, dealsData],
   )
 
-  // ─── Drag mutation with cache-level optimistic update.
-  //     We mutate the deals query cache directly so the kanban repaints
-  //     instantly, and roll back if Supabase rejects.
+  // ─── Drag mutation. Goes through /api/deals/[id] PATCH so we get
+  //     server-side validation, auth, and an automatic activity_logs
+  //     entry (deal_moved). The cache is mutated optimistically before
+  //     the request fires so the kanban repaints instantly; if the
+  //     PATCH fails we invalidate to roll back.
   const moveDealMutation = useSupabaseMutation<
     { dealId: string; toStageId: string; toProbability: number; toStageName: string; dealName: string },
     void
   >({
     mutationFn: async ({ dealId, toStageId, toProbability }) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase.from('deals') as any)
-        .update({
+      const res = await fetch(`/api/deals/${dealId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           stage_id: toStageId,
           probability: toProbability,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', dealId)
-      if (error) throw new Error(error.message)
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`)
     },
     invalidateKeys: [queryKeys.pipeline.deals],
     successMessage: ({}, input) =>
@@ -171,23 +174,27 @@ export default function PipelinePage() {
     })
   }
 
-  // ─── Create deal mutation
+  // ─── Create deal mutation. Goes through /api/deals POST for
+  //     server-side validation + automatic deal_created activity log.
   const createDealMutation = useSupabaseMutation<NewDealForm, void>({
     mutationFn: async (input) => {
       const stage = stages.find((s) => s.id === input.stage_id)
-      const { error } = await supabase
-        .from('deals')
-        .insert({
+      const res = await fetch('/api/deals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           name: input.name,
           contact_id: input.contact_id,
           value: parseFloat(input.value) || 0,
           stage_id: input.stage_id,
           expected_close_date: input.expected_close_date || null,
-          description: input.description,
+          description: input.description || null,
           probability: stage?.probability || 0,
           status: 'open',
-        } as any)
-      if (error) throw new Error(error.message)
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`)
     },
     invalidateKeys: [queryKeys.pipeline.deals],
     successMessage: (_, input) => {

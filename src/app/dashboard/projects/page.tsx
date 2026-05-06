@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase'
 export const dynamic = 'force-dynamic'
 
 import { Plus, Search, FolderKanban } from 'lucide-react'
+import { NewProjectDialog } from '@/components/projects/NewProjectDialog'
 
 async function getProjects() {
   const { data, error } = await supabase
@@ -44,14 +45,7 @@ export default async function ProjectsPage() {
           <h1 className="text-3xl font-bold text-white">Proyectos</h1>
           <p className="text-zinc-400 mt-1">Gestiona tus proyectos activos</p>
         </div>
-        <Button
-          disabled
-          className="bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
-          title="Próximamente — proyectos derivados de deals cerrados"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Nuevo Proyecto
-        </Button>
+        <NewProjectDialog />
       </div>
 
       <Card className="bg-zinc-950 border-zinc-800">
