@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Plus, Mail } from 'lucide-react'
 import { NewDealDialog } from '@/components/deals/NewDealDialog'
+import { EmailComposerDialog } from '@/components/emails/EmailComposerDialog'
 
 interface Props {
   contactId: string
@@ -12,14 +13,14 @@ interface Props {
 }
 
 /**
- * Action toolbar for /dashboard/contacts/[id]. Mirrors LeadActionsBar
- * but scoped to actions that make sense from a contact:
+ * Action toolbar for /dashboard/contacts/[id]:
  *   • + Nuevo Deal — locked to this contact
- *   • Enviar email — opens default mail client (mailto:) for now;
- *     will hook into the email composer once Block C lands
+ *   • Enviar email — opens the EmailComposerDialog pre-filled with
+ *     the contact's email + name. Sends via /api/emails (Resend).
  */
 export function ContactActionsBar({ contactId, contactLabel, contactEmail }: Props) {
   const [dealOpen, setDealOpen] = useState(false)
+  const [emailOpen, setEmailOpen] = useState(false)
 
   return (
     <>
@@ -34,16 +35,15 @@ export function ContactActionsBar({ contactId, contactLabel, contactEmail }: Pro
         </Button>
 
         {contactEmail && (
-          <a href={`mailto:${contactEmail}`}>
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-zinc-700 text-zinc-300 hover:bg-zinc-900 h-8"
-            >
-              <Mail className="h-3.5 w-3.5 mr-1" />
-              Enviar email
-            </Button>
-          </a>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setEmailOpen(true)}
+            className="border-zinc-700 text-zinc-300 hover:bg-zinc-900 h-8"
+          >
+            <Mail className="h-3.5 w-3.5 mr-1" />
+            Enviar email
+          </Button>
         )}
       </div>
 
@@ -53,6 +53,15 @@ export function ContactActionsBar({ contactId, contactLabel, contactEmail }: Pro
         lockedContactId={contactId}
         lockedContactLabel={contactLabel}
       />
+      {contactEmail && (
+        <EmailComposerDialog
+          open={emailOpen}
+          onOpenChange={setEmailOpen}
+          defaultTo={contactEmail}
+          defaultRecipientName={contactLabel}
+          contactId={contactId}
+        />
+      )}
     </>
   )
 }
