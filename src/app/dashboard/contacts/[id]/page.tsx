@@ -7,6 +7,7 @@ import { getServiceRoleClient } from '@/lib/supabase'
 import { Timeline } from '@/components/timeline/Timeline'
 import { Notes } from '@/components/notes/Notes'
 import { ContactEditCard } from '@/components/edit/ContactEditCard'
+import { ContactActionsBar } from '@/components/contacts/ContactActionsBar'
 import { ArrowLeft, Mail, Phone, Building2, Star, TrendingUp, Briefcase } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -185,8 +186,14 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
           )}
         </div>
 
-        {/* Right column: Notes + Timeline */}
-        <div className="space-y-8 min-w-0">
+        {/* Right column: Actions + Notes + Timeline */}
+        <div className="space-y-6 min-w-0">
+          <ContactActionsBar
+            contactId={params.id}
+            contactLabel={fullName || contact.email || 'contacto'}
+            contactEmail={contact.email}
+          />
+
           <section>
             <h2 className="text-sm font-medium text-zinc-400 mb-4 uppercase tracking-wider">
               Notas

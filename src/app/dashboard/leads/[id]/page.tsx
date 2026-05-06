@@ -7,6 +7,7 @@ import { getServiceRoleClient } from '@/lib/supabase'
 import { Timeline } from '@/components/timeline/Timeline'
 import { Notes } from '@/components/notes/Notes'
 import { LeadEditCard } from '@/components/edit/LeadEditCard'
+import { LeadActionsBar } from '@/components/leads/LeadActionsBar'
 import {
   ArrowLeft,
   Mail,
@@ -199,8 +200,16 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
           />
         </div>
 
-        {/* Right column: Notes + Timeline */}
-        <div className="space-y-8 min-w-0">
+        {/* Right column: Actions + Notes + Timeline */}
+        <div className="space-y-6 min-w-0">
+          <LeadActionsBar
+            leadId={params.id}
+            leadName={lead.name}
+            isConverted={lead.lead_status === 'converted' || !!lead.converted_to_client_id}
+            contactId={lead.contact_id ?? null}
+            currentFollowUp={lead.next_follow_up_date ?? null}
+          />
+
           <section>
             <h2 className="text-sm font-medium text-zinc-400 mb-4 uppercase tracking-wider">
               Notas
