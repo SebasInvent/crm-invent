@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getAuthClient } from '@/lib/supabase-auth'
 import { toast } from 'sonner'
-import { Mail, User, LogOut, Trash2, RefreshCw, Sparkles, Github } from 'lucide-react'
+import { Mail, User, LogOut, Trash2, RefreshCw, Sparkles, Github, ScanFace } from 'lucide-react'
+import { FaceEnrollCard } from '@/components/biometric/FaceEnrollCard'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -101,6 +102,15 @@ export function SettingsClient({ email, userId, createdAt, lastSignInAt, provide
           <Field icon={<User className="h-3.5 w-3.5" />} label="User ID" value={userId} mono />
         </CardContent>
       </Card>
+
+      {/* Seguridad — login facial */}
+      <div className="space-y-3">
+        <h2 className="flex items-center gap-2 text-base font-medium text-white">
+          <ScanFace className="h-4 w-4 text-zinc-400" />
+          Seguridad
+        </h2>
+        <FaceEnrollCard />
+      </div>
 
       {/* Cache & data */}
       <Card className="bg-zinc-950 border-zinc-800">

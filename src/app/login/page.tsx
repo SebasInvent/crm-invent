@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getAuthClient } from '@/lib/supabase-auth'
-import { Eye, EyeOff, Loader2, Lock } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Lock, ScanFace } from 'lucide-react'
+import { FaceLoginDialog } from '@/components/biometric/FaceLoginDialog'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -11,6 +12,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showFace, setShowFace] = useState(false)
   const router = useRouter()
 
   async function handleLogin(e: React.FormEvent) {
@@ -133,15 +135,16 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Face ID — futuro */}
+          {/* Login facial */}
           <div className="mt-6 pt-5 border-t border-zinc-900">
-            <div className="flex items-center justify-center gap-2 text-zinc-700">
-              <span className="text-sm">🔐</span>
-              <span className="text-xs">
-                Login facial —{' '}
-                <span className="text-zinc-600">próximamente (Medicare)</span>
-              </span>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowFace(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 py-2.5 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-700 hover:text-white"
+            >
+              <ScanFace className="h-4 w-4 text-cyan-400" />
+              Entrar con rostro
+            </button>
           </div>
 
         </div>
@@ -150,6 +153,8 @@ export default function LoginPage() {
           © {new Date().getFullYear()} Invent Agency · Acceso restringido
         </p>
       </div>
+
+      {showFace && <FaceLoginDialog onClose={() => setShowFace(false)} />}
     </div>
   )
 }

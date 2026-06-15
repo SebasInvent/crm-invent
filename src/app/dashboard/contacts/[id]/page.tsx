@@ -8,6 +8,11 @@ import { Timeline } from '@/components/timeline/Timeline'
 import { Notes } from '@/components/notes/Notes'
 import { ContactEditCard } from '@/components/edit/ContactEditCard'
 import { ContactActionsBar } from '@/components/contacts/ContactActionsBar'
+import {
+  ContactConversation,
+  type WaThread,
+  type WaMessage,
+} from '@/components/contacts/ContactConversation'
 import { ArrowLeft, Mail, Phone, Building2, Star, TrendingUp, Briefcase } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -33,11 +38,48 @@ async function getContact(id: string) {
   return data as any
 }
 
+/**
+ * Carga el hilo de WhatsApp del contacto (matchea por los últimos 10 dígitos
+ * del teléfono para tolerar el prefijo país 57 y formatos con espacios).
+ * Los nuevos mensajes llegan luego por Realtime en el cliente.
+ */
+async function getWhatsappConversation(phone: string | null) {
+  const empty = { thread: null as WaThread, messages: [] as WaMessage[] }
+  if (!phone) return empty
+  const digits = phone.replace(/\D/g, '')
+  const match = digits.length >= 10 ? digits.slice(-10) : digits
+  if (!match) return empty
+
+  const supabase = getServiceRoleClient()
+  const [threadsRes, messagesRes] = await Promise.all([
+    supabase
+      .from('chat_threads' as never)
+      .select('*')
+      .like('phone' as never, `%${match}`)
+      .order('last_message_at' as never, { ascending: false })
+      .limit(1),
+    supabase
+      .from('chat_messages' as never)
+      .select('*')
+      .like('phone' as never, `%${match}`)
+      .order('created_at' as never, { ascending: true })
+      .limit(500),
+  ])
+
+  const threads = (threadsRes.data as any[]) || []
+  const messages = (messagesRes.data as any[]) || []
+  return {
+    thread: (threads[0] ?? null) as WaThread,
+    messages: messages as WaMessage[],
+  }
+}
+
 export default async function ContactDetailPage({ params }: { params: { id: string } }) {
   const contact = await getContact(params.id)
   if (!contact) notFound()
 
   const fullName = [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim()
+  const { thread, messages } = await getWhatsappConversation(contact.phone)
 
   return (
     <div className="space-y-6">
@@ -193,6 +235,18 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
             contactLabel={fullName || contact.email || 'contacto'}
             contactEmail={contact.email}
           />
+
+          <section>
+            <h2 className="text-sm font-medium text-zinc-400 mb-4 uppercase tracking-wider">
+              WhatsApp
+            </h2>
+            <ContactConversation
+              contactPhone={contact.phone}
+              contactName={fullName}
+              initialThread={thread}
+              initialMessages={messages}
+            />
+          </section>
 
           <section>
             <h2 className="text-sm font-medium text-zinc-400 mb-4 uppercase tracking-wider">
