@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CRM Invent">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#101418"/>
+      <stop offset="100%" stop-color="#06080a"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#00d4ff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- background (siempre cuadrado para 'maskable') -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- glow detrás del símbolo -->
+  <circle cx="256" cy="256" r="160" fill="url(#glow)"/>
+
+  <!-- símbolo: "I" geométrica con dot superior (estilo invent) -->
+  <!-- dot superior cyan -->
+  <circle cx="256" cy="156" r="28" fill="#00d4ff"/>
+  <!-- tallo de la I -->
+  <rect x="232" y="208" width="48" height="160" rx="8" fill="#e9eef3"/>
+</svg>
