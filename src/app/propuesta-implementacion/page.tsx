@@ -23,7 +23,7 @@ import {
 export const metadata: Metadata = {
   title: 'CRM Invent · Propuesta de Implementación',
   description:
-    'El primer CRM en Colombia con histórico de WhatsApp + IA por contacto y login facial biométrico. Implementación personalizada desde US$4.000.',
+    'El primer CRM en Colombia con histórico de WhatsApp + IA por contacto y login facial biométrico. Implementación personalizada desde US$1.990.',
 }
 
 const MARKET_STATS = [
@@ -109,73 +109,74 @@ const TIERS = [
   {
     id: 'nucleo',
     name: 'Núcleo',
-    priceUSD: 'US$4.000',
-    priceCOP: '≈ COP 16.000.000',
-    blurb: 'Para la PYME que quiere el diferenciador WhatsApp + IA y CRM esencial bien hecho, con login facial premium.',
-    monthly: 'US$59–79 / mes',
+    priceUSD: 'US$1.990',
+    priceCOP: '≈ COP 8.000.000',
+    blurb: 'Para la PYME que quiere arrancar con el diferenciador WhatsApp + IA y un CRM esencial bien hecho, con login facial premium incluido.',
+    monthly: 'US$59 / mes',
     features: [
       'CRM: contactos, empresas, embudo kanban, tareas, notas',
       'Importación CSV + personalización con tu marca',
       'WhatsApp (1 número) + histórico por contacto',
       'IA nivel 1: resumen + intención + etapa + sentimiento',
-      'Login facial básico (hasta 5 usuarios) + Habeas Data',
-      'Capacitación 2h + 1 mes de soporte',
+      'Login facial básico (hasta 3 usuarios) + Habeas Data',
+      'Capacitación 2h + 2 semanas de soporte',
     ],
     featured: false,
   },
   {
     id: 'pro',
     name: 'Pro',
-    priceUSD: 'US$6.000',
-    priceCOP: '≈ COP 24.000.000',
+    priceUSD: 'US$3.990',
+    priceCOP: '≈ COP 16.000.000',
     blurb: 'Para el equipo comercial con varios asesores que automatiza, mide y opera con seguridad biométrica multi-usuario.',
-    monthly: 'US$129–149 / mes',
+    monthly: 'US$119 / mes',
     features: [
       'Todo lo del Núcleo',
-      'Multi-agente / multi-número WhatsApp',
+      'Multi-agente / multi-número WhatsApp (hasta 10 usuarios)',
       'Plantillas aprobadas + campañas segmentadas',
       'IA nivel 2: próxima acción + lead scoring + alertas',
       'Automatizaciones (bienvenida, recordatorios, recuperación)',
       'Pagos Wompi o agenda de citas',
       'Reportes y tablero',
-      'Login facial multi-usuario (25) + confirmación facial de acciones',
-      '1 integración a elegir + 2 meses de soporte',
+      'Login facial multi-usuario (10) + confirmación facial de acciones',
+      '1 integración a elegir + 1 mes de soporte',
     ],
     featured: true,
   },
   {
     id: 'full',
     name: 'Full',
-    priceUSD: 'US$8.000',
+    priceUSD: 'US$7.990',
     priceCOP: '≈ COP 32.000.000',
     blurb: 'Para operaciones que quieren agente IA 24/7, analítica predictiva, integraciones completas y auditoría biométrica avanzada.',
-    monthly: 'US$249–349 / mes',
+    monthly: 'US$299 / mes',
     features: [
       'Todo lo del Pro',
+      'Usuarios ilimitados',
       'Agente IA conversacional 24/7 con handoff',
       'IA nivel 3: predicción de cierre + churn + copiloto',
       'Integraciones avanzadas: DIAN + Wompi + Meta Ads + correo',
       'Onboarding multi-cliente (Embedded Signup)',
       'Panel de cumplimiento y RNBD avanzado',
       'Login facial ilimitado + agente IA biométrico + auditoría facial',
-      'App móvil PWA + SLA 24/7',
-      '3 meses de soporte',
+      'App móvil PWA + SLA 24/7 + 3 meses de soporte',
     ],
     featured: false,
   },
 ]
 
 const FEATURE_MATRIX: Array<{ feature: string; nucleo: string; pro: string; full: string }> = [
-  { feature: 'Inversión única', nucleo: 'US$4.000', pro: 'US$6.000', full: 'US$8.000' },
-  { feature: 'Equivalente COP', nucleo: '~16M', pro: '~24M', full: '~32M' },
+  { feature: 'Inversión única', nucleo: 'US$1.990', pro: 'US$3.990', full: 'US$7.990' },
+  { feature: 'Equivalente COP', nucleo: '~8M', pro: '~16M', full: '~32M' },
+  { feature: 'Mensualidad', nucleo: 'US$59/mes', pro: 'US$119/mes', full: 'US$299/mes' },
   { feature: 'CRM + embudo + tareas + búsqueda', nucleo: '✓', pro: '✓', full: '✓' },
   { feature: 'Personalización con tu marca', nucleo: '✓', pro: '✓', full: '✓' },
   { feature: 'WhatsApp 1 número + histórico por contacto', nucleo: '✓', pro: '✓', full: '✓' },
   { feature: 'IA nivel 1: resumen/intención/etapa/sentimiento', nucleo: '✓', pro: '✓', full: '✓' },
   {
     feature: 'Login facial',
-    nucleo: 'Básico (5 usuarios)',
-    pro: 'Multi (25) + confirmación facial',
+    nucleo: 'Básico (3 usuarios)',
+    pro: 'Multi (10) + confirmación facial',
     full: 'Ilimitado + agente IA biométrico',
   },
   { feature: 'Cumplimiento Habeas Data', nucleo: 'Básico', pro: 'Básico', full: 'Avanzado + panel SIC' },
@@ -185,20 +186,22 @@ const FEATURE_MATRIX: Array<{ feature: string; nucleo: string; pro: string; full
   { feature: 'Pagos Wompi o agenda', nucleo: '–', pro: '✓', full: '✓' },
   { feature: 'Reportes y tablero', nucleo: '–', pro: '✓', full: '✓' },
   { feature: 'Integración externa (DIAN/Ads/Sheets/correo)', nucleo: '–', pro: '1', full: 'Avanzadas' },
+  { feature: 'Usuarios ilimitados', nucleo: '–', pro: '–', full: '✓' },
   { feature: 'Agente IA conversacional 24/7 + handoff', nucleo: '–', pro: '–', full: '✓' },
   { feature: 'IA nivel 3: predicción de cierre + churn + copiloto', nucleo: '–', pro: '–', full: '✓' },
   { feature: 'Onboarding multi-cliente (Embedded Signup)', nucleo: '–', pro: '–', full: '✓' },
   { feature: 'App móvil PWA', nucleo: '–', pro: '–', full: '✓' },
-  { feature: 'Soporte incluido', nucleo: '1 mes', pro: '2 meses', full: '3 meses' },
+  { feature: 'Soporte incluido', nucleo: '2 semanas', pro: '1 mes', full: '3 meses + SLA 24/7' },
 ]
 
 const TIMELINE = [
   {
     level: 'Núcleo',
-    weeks: '1–2 semanas',
+    weeks: '5–10 días',
     milestones: [
-      'Sem 1: setup + WABA + marca + datos',
-      'Sem 2: ingesta WhatsApp + IA nivel 1 + login facial + capacitación + go-live',
+      'Días 1–3: setup + WABA + marca + datos',
+      'Días 4–7: ingesta WhatsApp + IA nivel 1 + login facial',
+      'Días 8–10: capacitación + go-live',
     ],
   },
   {
@@ -233,7 +236,7 @@ const STACK = [
 ]
 
 const SLA: Array<{ rubro: string; nucleo: string; pro: string; full: string }> = [
-  { rubro: 'Soporte incluido', nucleo: '1 mes', pro: '2 meses', full: '3 meses + SLA 24/7' },
+  { rubro: 'Soporte incluido', nucleo: '2 semanas', pro: '1 mes', full: '3 meses + SLA 24/7' },
   { rubro: 'Garantía de errores', nucleo: '90 días', pro: '90 días', full: '90 días' },
   { rubro: 'Canal de soporte', nucleo: 'Email + WhatsApp', pro: 'Email + WhatsApp', full: '+ línea directa' },
   { rubro: 'Respuesta crítica', nucleo: '24h hábiles', pro: '12h hábiles', full: '4h, 24/7' },
@@ -350,8 +353,8 @@ export default function PropuestaImplementacion() {
           El primer CRM en Colombia con <span className="text-cyan-400">histórico de WhatsApp + IA</span> por contacto y <span className="text-cyan-400">login facial biométrico</span>.
         </h1>
         <p className="mt-6 max-w-2xl text-lg text-zinc-400">
-          Implementación personalizada desde <span className="font-semibold text-white">US$4.000</span> hasta US$8.000.
-          Construido como producto reutilizable: pagas por tu implementación, no por la I+D.
+          Tres paquetes desde <span className="font-semibold text-white">US$1.990</span> (≈ COP 8M)
+          hasta US$7.990. Construido como producto reutilizable: pagas por tu implementación, no por la I+D.
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <a
