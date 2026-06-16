@@ -13,7 +13,25 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [showFace, setShowFace] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const router = useRouter()
+
+  async function handleGoogleLogin() {
+    setGoogleLoading(true)
+    setError('')
+    const supabase = getAuthClient()
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+      },
+    })
+    if (oauthError) {
+      setError('No se pudo iniciar el login con Google.')
+      setGoogleLoading(false)
+    }
+    // Si todo va bien, signInWithOAuth redirige automáticamente.
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -66,6 +84,35 @@ export default function LoginPage() {
               Acceso Privado
             </h1>
             <p className="text-zinc-500 text-sm mt-1">Invent Agency CRM</p>
+          </div>
+
+          {/* Google sign-in (preferido) */}
+          <button
+            type="button"
+            onClick={handleGoogleLogin}
+            disabled={googleLoading}
+            className="mb-5 flex w-full items-center justify-center gap-2.5 rounded-lg border border-zinc-800 bg-zinc-900 py-2.5 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-700 hover:bg-zinc-800/80 disabled:opacity-40"
+          >
+            {googleLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="#EA4335"
+                  d="M12 10.2v3.96h5.5c-.24 1.5-1.74 4.39-5.5 4.39-3.32 0-6.02-2.74-6.02-6.13S8.68 6.29 12 6.29c1.88 0 3.14.8 3.86 1.48l2.64-2.55C16.86 3.65 14.62 2.75 12 2.75 6.84 2.75 2.7 6.9 2.7 12s4.14 9.25 9.3 9.25c5.36 0 8.92-3.77 8.92-9.08 0-.61-.07-1.08-.16-1.55H12z"
+                />
+              </svg>
+            )}
+            Continuar con Google
+          </button>
+
+          <div className="relative mb-5">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-zinc-900" />
+            </div>
+            <div className="relative flex justify-center text-[10px] uppercase tracking-wider">
+              <span className="bg-zinc-950 px-2 text-zinc-600">o con tu cuenta</span>
+            </div>
           </div>
 
           {/* Form */}

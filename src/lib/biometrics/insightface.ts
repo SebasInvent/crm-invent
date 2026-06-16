@@ -66,10 +66,16 @@ let session: any = null
 let isInitializing = false
 
 // ArcFace model configuration
+// Modelo por defecto: w600k_r50.onnx (ResNet50 webface600k, 512-d) — el mismo que usa
+// Medicare en producción, alojado en el R2 público de Invent. Se puede sobrescribir
+// con NEXT_PUBLIC_MODELS_URL + NEXT_PUBLIC_FACE_MODEL.
 const MODEL_CONFIG = {
   inputSize: 112, // ArcFace expects 112x112 input
   outputSize: 512, // 512-dimensional embedding
-  modelPath: `${process.env.NEXT_PUBLIC_MODELS_URL || '/models'}/arcface_mobilefacenet.onnx`,
+  modelPath: `${
+    process.env.NEXT_PUBLIC_MODELS_URL ||
+    'https://pub-9d169f7a228744c8b2828de2f4645bb5.r2.dev'
+  }/${process.env.NEXT_PUBLIC_FACE_MODEL || 'w600k_r50.onnx'}`,
 }
 
 // Thresholds
@@ -100,20 +106,7 @@ export async function initInsightFace(): Promise<void> {
     console.log('✅ InsightFace model loaded')
   } catch (error) {
     console.error('❌ Failed to load InsightFace model:', (error as Error).message)
-
-    // Fallback: try loading from CDN
-    try {
-      const ort = await loadOrt()
-      const cdnPath =
-        'https://huggingface.co/nickmuchi/mobilefacenet-arcface-onnx/resolve/main/mobilefacenet.onnx'
-      session = await ort.InferenceSession.create(cdnPath, {
-        executionProviders: ['wasm'],
-      })
-      console.log('✅ InsightFace model loaded from CDN')
-    } catch (cdnError) {
-      console.error('❌ CDN fallback also failed:', (cdnError as Error).message)
-      throw new Error('Failed to load InsightFace model')
-    }
+    throw new Error('Failed to load InsightFace model')
   } finally {
     isInitializing = false
   }
