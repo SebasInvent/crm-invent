@@ -23,7 +23,7 @@ import {
 export const metadata: Metadata = {
   title: 'CRM Invent · Propuesta de Implementación',
   description:
-    'El primer CRM en Colombia con histórico de WhatsApp + IA por contacto y login facial biométrico. Implementación personalizada desde US$1.990.',
+    'El primer CRM en Colombia con histórico de WhatsApp + IA por contacto y login facial biométrico. Implementación personalizada desde COP 3.900.000.',
 }
 
 const MARKET_STATS = [
@@ -109,10 +109,11 @@ const TIERS = [
   {
     id: 'nucleo',
     name: 'Núcleo',
-    priceUSD: 'US$1.990',
-    priceCOP: '≈ COP 8.000.000',
+    priceCOP: 'COP 3.900.000',
+    priceUSD: '≈ US$975',
     blurb: 'Para la PYME que quiere arrancar con el diferenciador WhatsApp + IA y un CRM esencial bien hecho, con login facial premium incluido.',
-    monthly: 'US$59 / mes',
+    monthlyCOP: 'COP 199.000 / mes',
+    monthlyUSD: '≈ US$50',
     features: [
       'CRM: contactos, empresas, embudo kanban, tareas, notas',
       'Importación CSV + personalización con tu marca',
@@ -126,10 +127,11 @@ const TIERS = [
   {
     id: 'pro',
     name: 'Pro',
-    priceUSD: 'US$3.990',
-    priceCOP: '≈ COP 16.000.000',
+    priceCOP: 'COP 8.900.000',
+    priceUSD: '≈ US$2.225',
     blurb: 'Para el equipo comercial con varios asesores que automatiza, mide y opera con seguridad biométrica multi-usuario.',
-    monthly: 'US$119 / mes',
+    monthlyCOP: 'COP 399.000 / mes',
+    monthlyUSD: '≈ US$100',
     features: [
       'Todo lo del Núcleo',
       'Multi-agente / multi-número WhatsApp (hasta 10 usuarios)',
@@ -146,10 +148,11 @@ const TIERS = [
   {
     id: 'full',
     name: 'Full',
-    priceUSD: 'US$7.990',
-    priceCOP: '≈ COP 32.000.000',
+    priceCOP: 'COP 18.900.000',
+    priceUSD: '≈ US$4.725',
     blurb: 'Para operaciones que quieren agente IA 24/7, analítica predictiva, integraciones completas y auditoría biométrica avanzada.',
-    monthly: 'US$299 / mes',
+    monthlyCOP: 'COP 899.000 / mes',
+    monthlyUSD: '≈ US$225',
     features: [
       'Todo lo del Pro',
       'Usuarios ilimitados',
@@ -166,9 +169,9 @@ const TIERS = [
 ]
 
 const FEATURE_MATRIX: Array<{ feature: string; nucleo: string; pro: string; full: string }> = [
-  { feature: 'Inversión única', nucleo: 'US$1.990', pro: 'US$3.990', full: 'US$7.990' },
-  { feature: 'Equivalente COP', nucleo: '~8M', pro: '~16M', full: '~32M' },
-  { feature: 'Mensualidad', nucleo: 'US$59/mes', pro: 'US$119/mes', full: 'US$299/mes' },
+  { feature: 'Inversión única', nucleo: 'COP 3.9M', pro: 'COP 8.9M', full: 'COP 18.9M' },
+  { feature: 'Equivalente USD', nucleo: '~US$975', pro: '~US$2.225', full: '~US$4.725' },
+  { feature: 'Mensualidad', nucleo: 'COP 199k', pro: 'COP 399k', full: 'COP 899k' },
   { feature: 'CRM + embudo + tareas + búsqueda', nucleo: '✓', pro: '✓', full: '✓' },
   { feature: 'Personalización con tu marca', nucleo: '✓', pro: '✓', full: '✓' },
   { feature: 'WhatsApp 1 número + histórico por contacto', nucleo: '✓', pro: '✓', full: '✓' },
@@ -353,8 +356,8 @@ export default function PropuestaImplementacion() {
           El primer CRM en Colombia con <span className="text-cyan-400">histórico de WhatsApp + IA</span> por contacto y <span className="text-cyan-400">login facial biométrico</span>.
         </h1>
         <p className="mt-6 max-w-2xl text-lg text-zinc-400">
-          Tres paquetes desde <span className="font-semibold text-white">US$1.990</span> (≈ COP 8M)
-          hasta US$7.990. Construido como producto reutilizable: pagas por tu implementación, no por la I+D.
+          Tres paquetes desde <span className="font-semibold text-white">COP 3.900.000</span> (≈ US$975)
+          hasta COP 18.900.000. Construido como producto reutilizable: pagas por tu implementación, no por la I+D.
         </p>
         <div className="mt-8 flex flex-wrap items-center gap-3">
           <a
@@ -554,9 +557,9 @@ export default function PropuestaImplementacion() {
               <div>
                 <h3 className="text-2xl font-bold tracking-tight text-white">{t.name}</h3>
                 <div className="mt-4 flex items-baseline gap-2">
-                  <span className="text-4xl font-bold text-white">{t.priceUSD}</span>
+                  <span className="text-4xl font-bold tracking-tight text-white">{t.priceCOP}</span>
                 </div>
-                <p className="mt-1 font-mono text-xs text-zinc-500">{t.priceCOP}</p>
+                <p className="mt-1 font-mono text-xs text-zinc-500">{t.priceUSD}</p>
                 <p className="mt-5 text-sm text-zinc-400">{t.blurb}</p>
               </div>
               <ul className="mt-7 flex-1 space-y-3">
@@ -569,7 +572,8 @@ export default function PropuestaImplementacion() {
               </ul>
               <div className="mt-7 rounded-xl border border-zinc-800 bg-zinc-950/60 px-4 py-3 text-xs">
                 <p className="font-mono uppercase tracking-wider text-zinc-500">Mensualidad</p>
-                <p className="mt-1 text-zinc-100">{t.monthly}</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-100">{t.monthlyCOP}</p>
+                <p className="mt-0.5 font-mono text-[10px] text-zinc-500">{t.monthlyUSD}</p>
               </div>
               <a
                 href="#contacto"
