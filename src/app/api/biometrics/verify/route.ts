@@ -5,10 +5,12 @@ import { getServiceRoleClient } from '@/lib/supabase'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// Mismos umbrales que el motor de Medicare (BIOMETRIC_V2_ARCHITECTURE.md)
-const MATCH_THRESHOLD = 0.45 // distancia coseno
+// Umbral subido 0.45 → 0.6 tras detectar el bug de crop facial. Con crop+align
+// correcto, las distancias intra-clase suelen estar 0.2-0.5; 0.6 deja margen sin
+// abrir demasiado a falsos positivos (los gates de liveness/anti-spoof complementan).
+const MATCH_THRESHOLD = 0.6
 const MIN_LIVENESS = 60
-const MAX_SPOOF = 40
+const MAX_SPOOF = 65 // alineado con flow.ts (era 40, falsos positivos en luz baja)
 
 const schema = z.object({
   embedding512: z.string(), // JSON array de 512 floats
@@ -91,13 +93,23 @@ export async function POST(req: NextRequest) {
   }
 
   let best: { userId: string; distance: number } | null = null
+  const allDistances: Array<{ userId: string; distance: number }> = []
   for (const c of list) {
     const stored =
       Array.isArray(c.embedding512) ? c.embedding512 : typeof c.embedding512 === 'string' ? JSON.parse(c.embedding512) : null
     if (!stored || stored.length !== probe.length) continue
     const d = cosineDistance(probe, stored)
+    allDistances.push({ userId: c.user_id, distance: d })
     if (!best || d < best.distance) best = { userId: c.user_id, distance: d }
   }
+
+  // Log de diagnóstico: ayuda a calibrar el umbral en producción
+  console.log('[face-verify] distances', {
+    threshold: MATCH_THRESHOLD,
+    best: best?.distance.toFixed(4),
+    candidates: allDistances.length,
+    all: allDistances.map((d) => d.distance.toFixed(4)),
+  })
 
   if (!best || best.distance >= MATCH_THRESHOLD) {
     await logAttempt(supabase, {

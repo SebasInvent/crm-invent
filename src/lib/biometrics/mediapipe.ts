@@ -374,6 +374,62 @@ export async function getQuickLivenessScore(
 }
 
 /**
+ * Devuelve el bounding box del rostro detectado en el frame actual
+ * (en coordenadas de píxeles del video). Si no hay cara, devuelve null.
+ * Lo usa InsightFace para cropear ANTES de extraer el embedding —
+ * ArcFace está entrenado con caras cropeadas/alineadas, no con frames enteros.
+ */
+export async function getFaceBoundingBox(
+  video: HTMLVideoElement,
+): Promise<{ x: number; y: number; w: number; h: number } | null> {
+  if (!faceLandmarker) await initMediapipe()
+  if (!faceLandmarker) return null
+
+  const vw = video.videoWidth || 640
+  const vh = video.videoHeight || 480
+  const ts = performance.now()
+  const res = faceLandmarker.detectForVideo(video, ts)
+  if (!res.faceLandmarks || res.faceLandmarks.length === 0) return null
+
+  const lm = res.faceLandmarks[0]
+  let minX = 1
+  let minY = 1
+  let maxX = 0
+  let maxY = 0
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const p of lm as any[]) {
+    if (p.x < minX) minX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.x > maxX) maxX = p.x
+    if (p.y > maxY) maxY = p.y
+  }
+  // Convertir a píxeles
+  let x = minX * vw
+  let y = minY * vh
+  let w = (maxX - minX) * vw
+  let h = (maxY - minY) * vh
+
+  // Margen del 25% para incluir frente/barbilla/orejas (ArcFace lo necesita)
+  const marginX = w * 0.25
+  const marginY = h * 0.25
+  x = Math.max(0, x - marginX)
+  y = Math.max(0, y - marginY)
+  w = Math.min(vw - x, w + 2 * marginX)
+  h = Math.min(vh - y, h + 2 * marginY)
+
+  // Cuadrado (ArcFace es 112x112)
+  const size = Math.max(w, h)
+  const cx = x + w / 2
+  const cy = y + h / 2
+  x = Math.max(0, cx - size / 2)
+  y = Math.max(0, cy - size / 2)
+  w = Math.min(size, vw - x)
+  h = Math.min(size, vh - y)
+
+  return { x, y, w, h }
+}
+
+/**
  * Cleanup
  */
 export function cleanupMediapipe(): void {

@@ -116,6 +116,11 @@ export async function initInsightFace(): Promise<void> {
 
 /**
  * Extract face embedding from image
+ *
+ * IMPORTANTE: ArcFace fue entrenado con caras cropeadas/alineadas, NO con frames
+ * enteros. Si el source es un video, detectamos la cara con Mediapipe y le pasamos
+ * SOLO el crop con margen. Sin esto, los embeddings son inestables y el match
+ * coseno entre enroll y verify se rompe (la causa raíz del NO_MATCH crónico).
  */
 export async function extractEmbedding(
   imageSource: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement,
@@ -138,8 +143,43 @@ export async function extractEmbedding(
 
   try {
     const ort = await loadOrt()
-    // Preprocess image
-    const inputTensor = preprocessImage(ort, imageSource)
+
+    // Si es video, cropeamos al bbox del rostro detectado por Mediapipe.
+    // Esto es CRÍTICO para que enroll/verify produzcan embeddings comparables.
+    let preprocessSource: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement =
+      imageSource
+    if (imageSource instanceof HTMLVideoElement) {
+      const { getFaceBoundingBox } = await import('./mediapipe')
+      const bbox = await getFaceBoundingBox(imageSource)
+      if (!bbox) {
+        return {
+          embedding: [],
+          quality: 0,
+          faceDetected: false,
+          processingTimeMs: performance.now() - startTime,
+          error: 'No se detectó un rostro centrado',
+        }
+      }
+      const cropCanvas = document.createElement('canvas')
+      cropCanvas.width = Math.max(1, Math.round(bbox.w))
+      cropCanvas.height = Math.max(1, Math.round(bbox.h))
+      const cropCtx = cropCanvas.getContext('2d')!
+      cropCtx.drawImage(
+        imageSource,
+        bbox.x,
+        bbox.y,
+        bbox.w,
+        bbox.h,
+        0,
+        0,
+        cropCanvas.width,
+        cropCanvas.height,
+      )
+      preprocessSource = cropCanvas
+    }
+
+    // Preprocess image (acepta video/canvas/image; ya viene cropeada si era video)
+    const inputTensor = preprocessImage(ort, preprocessSource)
 
     // Run inference
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
