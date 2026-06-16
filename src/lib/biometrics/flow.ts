@@ -14,7 +14,11 @@ import {
 import { initMediapipe, getQuickLivenessScore, cleanupMediapipe } from './mediapipe'
 import { analyzeForSpoof } from './antispoof'
 
-const CONFIG = { MIN_LIVENESS: 60, MAX_SPOOF: 40 }
+// MAX_SPOOF se subió 40 → 65 tras pruebas reales en luz baja: las heurísticas
+// (reflexión, varianza, color) son sensibles al entorno doméstico. El liveness
+// fuerte (parpadeo/movimiento) vive en Mediapipe; el anti-spoof aquí es un
+// segundo gate "rápido" y debe ser tolerante para no romper UX.
+const CONFIG = { MIN_LIVENESS: 60, MAX_SPOOF: 65 }
 
 let inited = false
 
@@ -80,13 +84,22 @@ export async function captureForLogin(
   onProgress?.('Anti-suplantación...', 55)
   const anti = await analyzeForSpoof(video)
   const spoofScore = anti.spoofProbability * 100
+  console.log('[antispoof:login]', {
+    spoofScore: spoofScore.toFixed(1),
+    threshold: CONFIG.MAX_SPOOF,
+    texture: anti.textureVariance.toFixed(1),
+    laplacian: anti.laplacianVariance.toFixed(1),
+    reflection: anti.reflectionScore.toFixed(1),
+    moire: anti.moireScore.toFixed(1),
+    colorNaturalness: anti.colorDistribution.naturalness.toFixed(1),
+  })
   if (spoofScore > CONFIG.MAX_SPOOF) {
     return {
       ok: false,
       reason: 'spoof',
       livenessScore,
       spoofScore,
-      message: 'Posible suplantación detectada. Usa tu rostro real.',
+      message: 'Posible suplantación detectada. Mejora la luz y mira de frente.',
     }
   }
 
@@ -157,13 +170,22 @@ export async function captureForEnroll(
 
   const anti = await analyzeForSpoof(video)
   const spoofScore = anti.spoofProbability * 100
+  console.log('[antispoof:enroll]', {
+    spoofScore: spoofScore.toFixed(1),
+    threshold: CONFIG.MAX_SPOOF,
+    texture: anti.textureVariance.toFixed(1),
+    laplacian: anti.laplacianVariance.toFixed(1),
+    reflection: anti.reflectionScore.toFixed(1),
+    moire: anti.moireScore.toFixed(1),
+    colorNaturalness: anti.colorDistribution.naturalness.toFixed(1),
+  })
   if (spoofScore > CONFIG.MAX_SPOOF) {
     return {
       ok: false,
       reason: 'spoof',
       livenessScore,
       spoofScore,
-      message: 'Posible suplantación detectada. Usa tu rostro real.',
+      message: 'Posible suplantación detectada. Mejora la luz y mira de frente.',
     }
   }
 
