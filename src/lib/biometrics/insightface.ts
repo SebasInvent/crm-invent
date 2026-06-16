@@ -27,7 +27,9 @@ export interface ComparisonResult {
 }
 
 // ─── ONNX Runtime Web desde CDN (evita empaquetar el backend node) ───────────
-const ORT_VERSION = '1.16.3'
+// 1.20.x — 1.16.x rompía en Chrome sin WebGPU con
+// "JS execution provider is not supported in this build".
+const ORT_VERSION = '1.20.1'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let ortPromise: Promise<any> | null = null
 
@@ -95,11 +97,11 @@ export async function initInsightFace(): Promise<void> {
 
   try {
     const ort = await loadOrt()
-    // Try WebGPU first, fallback to WASM
-    const executionProviders = ['webgpu', 'wasm']
-
+    // Solo WASM por compatibilidad: WebGPU no está disponible en muchos
+    // Chrome de escritorio y el fallback interno rompe con
+    // "JS execution provider is not supported".
     session = await ort.InferenceSession.create(MODEL_CONFIG.modelPath, {
-      executionProviders,
+      executionProviders: ['wasm'],
       graphOptimizationLevel: 'all',
     })
 
