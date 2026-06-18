@@ -2,44 +2,69 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from '@/components/ui/table'
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger 
+  DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { supabase } from '@/lib/supabase'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { 
-  Plus, 
-  Search, 
-  MoreHorizontal, 
-  FileText, 
+import {
+  Plus,
+  Search,
+  MoreHorizontal,
+  FileText,
   Send,
-  CheckCircle2,
-  XCircle,
-  Clock,
   Eye,
   Copy,
   Trash2,
-  FileSpreadsheet
+  Loader2,
 } from 'lucide-react'
-import type { Quote, QuoteLineItem, Product, Contact } from '@/types/finance'
+import type { Quote } from '@/types/finance'
+
+interface ContactOption {
+  id: string
+  first_name: string
+  last_name?: string
+  email?: string
+  company_name?: string
+}
+
+interface ProductOption {
+  id: string
+  name: string
+}
+
+interface QuoteLineItemFormData {
+  product_id?: string
+  description: string
+  quantity: number
+  unit_price: number
+  discount_percentage: number
+  tax_rate: number
+}
+
+const COP = (n: number) =>
+  new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 0,
+  }).format(n || 0)
 
 export default function QuotesPage() {
   const router = useRouter()
@@ -47,10 +72,12 @@ export default function QuotesPage() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  
+  const [saving, setSaving] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
+
   // Form state
-  const [contacts, setContacts] = useState<Contact[]>([])
-  const [products, setProducts] = useState<Product[]>([])
+  const [contacts, setContacts] = useState<ContactOption[]>([])
+  const [products, setProducts] = useState<ProductOption[]>([])
   const [selectedContact, setSelectedContact] = useState('')
   const [lineItems, setLineItems] = useState<QuoteLineItemFormData[]>([])
   const [notes, setNotes] = useState('')
@@ -58,51 +85,51 @@ export default function QuotesPage() {
 
   useEffect(() => {
     fetchQuotes()
-    fetchContacts()
-    fetchProducts()
+    fetchFormData()
   }, [])
 
   async function fetchQuotes() {
     setLoading(true)
-    const { data } = await supabase
-      .from('quotes_view')
-      .select('*')
-      .order('created_at', { ascending: false })
-    
-    if (data) setQuotes(data as Quote[])
-    setLoading(false)
+    try {
+      const res = await fetch('/api/quotes')
+      const json = await res.json()
+      if (res.ok) setQuotes((json.quotes ?? []) as Quote[])
+      else toast.error(json.error || 'No se pudieron cargar las cotizaciones')
+    } catch {
+      toast.error('Error de red al cargar cotizaciones')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  async function fetchContacts() {
-    const { data } = await supabase
-      .from('contacts')
-      .select('id, first_name, last_name, email, company_name')
-      .eq('status', 'active')
-    
-    if (data) setContacts(data as Contact[])
+  async function fetchFormData() {
+    try {
+      const res = await fetch('/api/quotes/form-data')
+      const json = await res.json()
+      if (res.ok) {
+        setContacts((json.contacts ?? []) as ContactOption[])
+        setProducts((json.products ?? []) as ProductOption[])
+      }
+    } catch {
+      // silencioso: el diálogo aún permite líneas personalizadas
+    }
   }
 
-  async function fetchProducts() {
-    const { data } = await supabase
-      .from('products')
-      .select('*')
-      .eq('is_active', true)
-    
-    if (data) setProducts(data as Product[])
+  function addLineItem(product?: ProductOption) {
+    setLineItems([
+      ...lineItems,
+      {
+        product_id: product?.id,
+        description: product?.name || '',
+        quantity: 1,
+        unit_price: 0,
+        discount_percentage: 0,
+        tax_rate: 0,
+      },
+    ])
   }
 
-  function addLineItem(product?: Product) {
-    setLineItems([...lineItems, {
-      product_id: product?.id,
-      description: product?.name || '',
-      quantity: 1,
-      unit_price: product?.unit_price || 0,
-      discount_percentage: 0,
-      tax_rate: product?.tax_rate || 0
-    }])
-  }
-
-  function updateLineItem(index: number, field: string, value: any) {
+  function updateLineItem(index: number, field: string, value: string | number) {
     const updated = [...lineItems]
     updated[index] = { ...updated[index], [field]: value }
     setLineItems(updated)
@@ -118,51 +145,101 @@ export default function QuotesPage() {
       const discount = itemTotal * (item.discount_percentage / 100)
       return sum + itemTotal - discount
     }, 0)
-    
+
     const tax = lineItems.reduce((sum, item) => {
       const itemTotal = item.quantity * item.unit_price
       const discount = itemTotal * (item.discount_percentage / 100)
       const taxable = itemTotal - discount
-      return sum + (taxable * (item.tax_rate / 100))
+      return sum + taxable * (item.tax_rate / 100)
     }, 0)
-    
+
     return { subtotal, tax, total: subtotal + tax }
   }
 
   async function createQuote() {
-    const { subtotal, tax, total } = calculateTotals()
-    
-    const { data: quote, error } = await supabase
-      .from('quotes')
-      .insert({
-        contact_id: selectedContact,
-        valid_until: validUntil,
-        notes,
-        subtotal,
-        tax_amount: tax,
-        total_amount: total,
-        status: 'draft'
-      } as any)
-      .select()
-      .single()
-    
-    if (!error && quote) {
-      // Insert line items
-      const itemsToInsert = lineItems.map((item, index) => ({
-        quote_id: quote.id,
-        ...item,
-        line_total: (item.quantity * item.unit_price) * (1 - item.discount_percentage / 100) * (1 + item.tax_rate / 100),
-        order_index: index
-      }))
-      
-      await supabase.from('quote_line_items').insert(itemsToInsert as any)
-      
+    setSaving(true)
+    try {
+      const res = await fetch('/api/quotes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contact_id: selectedContact,
+          valid_until: validUntil || null,
+          notes: notes || null,
+          line_items: lineItems,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        toast.error(json.error || 'No se pudo crear la cotización')
+        return
+      }
+      toast.success(`Cotización ${json.quote?.quote_number ?? ''} creada`)
       setIsCreateDialogOpen(false)
       setSelectedContact('')
       setLineItems([])
       setNotes('')
       setValidUntil('')
       fetchQuotes()
+    } catch {
+      toast.error('Error de red al crear la cotización')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function sendQuote(id: string) {
+    setBusyId(id)
+    try {
+      const res = await fetch(`/api/quotes/${id}/send`, { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) {
+        toast.error(json.error || 'No se pudo enviar')
+        return
+      }
+      toast.success(`Enviada a ${json.sent_to}`)
+      fetchQuotes()
+    } catch {
+      toast.error('Error de red al enviar')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function duplicateQuote(id: string) {
+    setBusyId(id)
+    try {
+      const res = await fetch(`/api/quotes/${id}/duplicate`, { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) {
+        toast.error(json.error || 'No se pudo duplicar')
+        return
+      }
+      toast.success(`Duplicada como ${json.quote?.quote_number ?? 'nueva'}`)
+      fetchQuotes()
+    } catch {
+      toast.error('Error de red al duplicar')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function deleteQuote(id: string, number?: string) {
+    if (!confirm(`¿Eliminar la cotización ${number ?? ''}? Esta acción no se puede deshacer.`)) return
+    setBusyId(id)
+    try {
+      const res = await fetch(`/api/quotes/${id}`, { method: 'DELETE' })
+      const json = await res.json()
+      if (!res.ok) {
+        toast.error(json.error || 'No se pudo eliminar')
+        return
+      }
+      toast.success('Cotización eliminada')
+      fetchQuotes()
+    } catch {
+      toast.error('Error de red al eliminar')
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -175,15 +252,27 @@ export default function QuotesPage() {
       rejected: 'bg-red-500/20 text-red-400 border-red-500/30',
       expired: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
       converted: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-      cancelled: 'bg-gray-500/20 text-gray-400 border-gray-500/30'
+      cancelled: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
     }
     return variants[status] || variants.draft
   }
 
-  const filteredQuotes = quotes.filter(quote => 
-    quote.quote_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    quote.client_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    quote.client_company?.toLowerCase().includes(searchQuery.toLowerCase())
+  const statusLabels: Record<string, string> = {
+    draft: 'Borrador',
+    sent: 'Enviada',
+    viewed: 'Vista',
+    accepted: 'Aceptada',
+    rejected: 'Rechazada',
+    expired: 'Expirada',
+    converted: 'Convertida',
+    cancelled: 'Cancelada',
+  }
+
+  const filteredQuotes = quotes.filter(
+    (quote) =>
+      quote.quote_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      quote.client_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      quote.client_company?.toLowerCase().includes(searchQuery.toLowerCase()),
   )
 
   const { subtotal, tax, total } = calculateTotals()
@@ -196,7 +285,7 @@ export default function QuotesPage() {
           <h1 className="text-3xl font-bold text-white">Cotizaciones</h1>
           <p className="text-zinc-400 mt-1">Gestiona propuestas y cotizaciones para clientes</p>
         </div>
-        <Button 
+        <Button
           className="bg-white text-black hover:bg-zinc-200"
           onClick={() => setIsCreateDialogOpen(true)}
         >
@@ -217,7 +306,7 @@ export default function QuotesPage() {
           <CardContent className="p-4">
             <div className="text-sm text-zinc-400">Pendientes</div>
             <p className="text-2xl font-bold text-yellow-400">
-              {quotes.filter(q => q.status === 'sent' || q.status === 'viewed').length}
+              {quotes.filter((q) => q.status === 'sent' || q.status === 'viewed').length}
             </p>
           </CardContent>
         </Card>
@@ -225,7 +314,7 @@ export default function QuotesPage() {
           <CardContent className="p-4">
             <div className="text-sm text-zinc-400">Aceptadas</div>
             <p className="text-2xl font-bold text-green-400">
-              {quotes.filter(q => q.status === 'accepted' || q.status === 'converted').length}
+              {quotes.filter((q) => q.status === 'accepted' || q.status === 'converted').length}
             </p>
           </CardContent>
         </Card>
@@ -233,7 +322,7 @@ export default function QuotesPage() {
           <CardContent className="p-4">
             <div className="text-sm text-zinc-400">Valor Total</div>
             <p className="text-2xl font-bold text-white">
-              ${quotes.reduce((sum, q) => sum + (q.total_amount || 0), 0).toLocaleString()}
+              {COP(quotes.reduce((sum, q) => sum + (q.total_amount || 0), 0))}
             </p>
           </CardContent>
         </Card>
@@ -259,6 +348,9 @@ export default function QuotesPage() {
             <div className="p-8 text-center">
               <FileText className="h-12 w-12 text-zinc-600 mx-auto mb-4" />
               <p className="text-zinc-500">No hay cotizaciones</p>
+              <p className="text-zinc-600 text-sm mt-1">
+                Crea la primera con el botón &quot;Nueva Cotización&quot;.
+              </p>
             </div>
           ) : (
             <Table>
@@ -275,51 +367,61 @@ export default function QuotesPage() {
               <TableBody>
                 {filteredQuotes.map((quote) => (
                   <TableRow key={quote.id} className="border-zinc-800">
-                    <TableCell className="font-medium text-white">
-                      {quote.quote_number}
-                    </TableCell>
+                    <TableCell className="font-medium text-white">{quote.quote_number}</TableCell>
                     <TableCell>
-                      <div className="text-white">{quote.client_name}</div>
+                      <div className="text-white">{quote.client_name || '—'}</div>
                       <div className="text-sm text-zinc-500">{quote.client_company}</div>
                     </TableCell>
-                    <TableCell className="text-white">
-                      ${quote.total_amount?.toLocaleString()}
-                    </TableCell>
+                    <TableCell className="text-white">{COP(quote.total_amount || 0)}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={getStatusBadge(quote.status)}>
-                        {quote.status}
+                        {statusLabels[quote.status] || quote.status}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-zinc-400">
-                      {quote.valid_until 
+                      {quote.valid_until
                         ? format(new Date(quote.valid_until), 'dd MMM yyyy', { locale: es })
-                        : 'Sin fecha'
-                      }
+                        : 'Sin fecha'}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-400">
-                            <MoreHorizontal className="h-4 w-4" />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-zinc-400"
+                            disabled={busyId === quote.id}
+                          >
+                            {busyId === quote.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <MoreHorizontal className="h-4 w-4" />
+                            )}
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="bg-zinc-900 border-zinc-800">
-                          <DropdownMenuItem 
+                          <DropdownMenuItem
                             className="text-white"
                             onClick={() => router.push(`/dashboard/quotes/${quote.id}`)}
                           >
                             <Eye className="h-4 w-4 mr-2" />
                             Ver detalle
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="text-white">
+                          <DropdownMenuItem className="text-white" onClick={() => sendQuote(quote.id)}>
                             <Send className="h-4 w-4 mr-2" />
                             Enviar
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="text-white">
+                          <DropdownMenuItem
+                            className="text-white"
+                            onClick={() => duplicateQuote(quote.id)}
+                          >
                             <Copy className="h-4 w-4 mr-2" />
                             Duplicar
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="text-red-400">
+                          <DropdownMenuItem
+                            className="text-red-400"
+                            onClick={() => deleteQuote(quote.id, quote.quote_number)}
+                          >
                             <Trash2 className="h-4 w-4 mr-2" />
                             Eliminar
                           </DropdownMenuItem>
@@ -340,7 +442,7 @@ export default function QuotesPage() {
           <DialogHeader>
             <DialogTitle>Crear Nueva Cotización</DialogTitle>
           </DialogHeader>
-          
+
           <div className="space-y-4 mt-4">
             {/* Cliente */}
             <div>
@@ -351,12 +453,18 @@ export default function QuotesPage() {
                 onChange={(e) => setSelectedContact(e.target.value)}
               >
                 <option value="">Seleccionar cliente...</option>
-                {contacts.map(contact => (
+                {contacts.map((contact) => (
                   <option key={contact.id} value={contact.id}>
-                    {contact.first_name} {contact.last_name} - {contact.company_name}
+                    {contact.first_name} {contact.last_name}
+                    {contact.company_name ? ` — ${contact.company_name}` : ''}
                   </option>
                 ))}
               </select>
+              {contacts.length === 0 && (
+                <p className="text-xs text-zinc-600 mt-1">
+                  No hay contactos activos. Crea uno en Contactos 360°.
+                </p>
+              )}
             </div>
 
             {/* Válido hasta */}
@@ -372,9 +480,9 @@ export default function QuotesPage() {
 
             {/* Productos */}
             <div>
-              <label className="text-sm text-zinc-400 mb-1 block">Agregar productos</label>
+              <label className="text-sm text-zinc-400 mb-1 block">Agregar líneas</label>
               <div className="flex gap-2 flex-wrap">
-                {products.map(product => (
+                {products.map((product) => (
                   <Button
                     key={product.id}
                     size="sm"
@@ -424,7 +532,9 @@ export default function QuotesPage() {
                             type="number"
                             className="bg-zinc-900 border-zinc-800 text-white text-sm text-center"
                             value={item.quantity}
-                            onChange={(e) => updateLineItem(index, 'quantity', parseFloat(e.target.value) || 0)}
+                            onChange={(e) =>
+                              updateLineItem(index, 'quantity', parseFloat(e.target.value) || 0)
+                            }
                           />
                         </td>
                         <td className="p-3">
@@ -432,7 +542,9 @@ export default function QuotesPage() {
                             type="number"
                             className="bg-zinc-900 border-zinc-800 text-white text-sm text-right"
                             value={item.unit_price}
-                            onChange={(e) => updateLineItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
+                            onChange={(e) =>
+                              updateLineItem(index, 'unit_price', parseFloat(e.target.value) || 0)
+                            }
                           />
                         </td>
                         <td className="p-3">
@@ -440,7 +552,13 @@ export default function QuotesPage() {
                             type="number"
                             className="bg-zinc-900 border-zinc-800 text-white text-sm text-right"
                             value={item.discount_percentage}
-                            onChange={(e) => updateLineItem(index, 'discount_percentage', parseFloat(e.target.value) || 0)}
+                            onChange={(e) =>
+                              updateLineItem(
+                                index,
+                                'discount_percentage',
+                                parseFloat(e.target.value) || 0,
+                              )
+                            }
                           />
                         </td>
                         <td className="p-3 text-right">
@@ -465,15 +583,15 @@ export default function QuotesPage() {
               <div className="bg-zinc-900 p-4 rounded-lg space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-zinc-400">Subtotal:</span>
-                  <span className="text-white">${subtotal.toLocaleString()}</span>
+                  <span className="text-white">{COP(subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-zinc-400">Impuestos:</span>
-                  <span className="text-white">${tax.toLocaleString()}</span>
+                  <span className="text-white">{COP(tax)}</span>
                 </div>
                 <div className="flex justify-between text-lg font-semibold border-t border-zinc-800 pt-2">
                   <span className="text-white">Total:</span>
-                  <span className="text-white">${total.toLocaleString()}</span>
+                  <span className="text-white">{COP(total)}</span>
                 </div>
               </div>
             )}
@@ -492,18 +610,19 @@ export default function QuotesPage() {
 
             {/* Botones */}
             <div className="flex justify-end gap-3 pt-4">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="border-zinc-700 text-zinc-300"
                 onClick={() => setIsCreateDialogOpen(false)}
               >
                 Cancelar
               </Button>
-              <Button 
+              <Button
                 className="bg-white text-black hover:bg-zinc-200"
                 onClick={createQuote}
-                disabled={!selectedContact || lineItems.length === 0}
+                disabled={!selectedContact || lineItems.length === 0 || saving}
               >
+                {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                 Crear Cotización
               </Button>
             </div>
@@ -512,14 +631,4 @@ export default function QuotesPage() {
       </Dialog>
     </div>
   )
-}
-
-// Type for form
-interface QuoteLineItemFormData {
-  product_id?: string;
-  description: string;
-  quantity: number;
-  unit_price: number;
-  discount_percentage: number;
-  tax_rate: number;
 }
