@@ -157,8 +157,13 @@ export function DashboardSidebar() {
 
         <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
           {navigation.map((item) => {
+            // '/dashboard' (Dashboard) NO debe usar prefijo, porque
+            // startsWith('/dashboard/') matchea TODAS las subrutas y dejaba el
+            // highlight pegado. Solo exacto para el root; prefijo para el resto.
             const isActive =
-              pathname === item.href || pathname?.startsWith(`${item.href}/`)
+              item.href === '/dashboard'
+                ? pathname === '/dashboard'
+                : pathname === item.href || pathname?.startsWith(`${item.href}/`)
             return (
               <Link
                 key={item.name}
