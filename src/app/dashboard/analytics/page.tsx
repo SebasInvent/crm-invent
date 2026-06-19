@@ -134,12 +134,14 @@ export default function AnalyticsPage() {
     deals: m.deals_won || 0
   }))
 
-  const pipelineData = pipelineStats.map(p => ({
-    name: p.stage_name,
-    value: p.total_value || 0,
-    deals: p.deals_count || 0,
-    color: p.color
-  }))
+  const pipelineData = pipelineStats
+    .map(p => ({
+      name: p.stage_name,
+      value: Number(p.total_value) || 0,
+      deals: Number(p.deals_count) || 0,
+      color: p.color,
+    }))
+    .filter(p => p.value > 0) // sin etapas en $0 (evita slices degenerados)
 
   const activityData = metrics.map(m => ({
     date: format(new Date(m.date), 'dd MMM', { locale: es }),
@@ -467,7 +469,10 @@ export default function AnalyticsPage() {
                         cy="50%"
                         labelLine={false}
                         label={({ name, value }) => `${name}: $${(value / 1000).toFixed(0)}k`}
+                        innerRadius={55}
                         outerRadius={100}
+                        paddingAngle={3}
+                        minAngle={4}
                         fill="#8884d8"
                         dataKey="value"
                       >
