@@ -10,12 +10,40 @@
 --
 -- Idempotente. Seguro de re-correr.
 
--- ─── Asegurar columnas de pago en invoices (defensivo) ─────────────
-ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(14,2) NOT NULL DEFAULT 0;
-ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_due  NUMERIC(14,2) NOT NULL DEFAULT 0;
-ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sent_at     TIMESTAMPTZ;
-ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sent_count  INT NOT NULL DEFAULT 0;
-ALTER TABLE invoices ADD COLUMN IF NOT EXISTS created_by  UUID;
+-- ─── Alinear la tabla `invoices` legacy con el módulo de finanzas ──
+-- En prod `invoices` es una tabla minimalista (id, client_id, project_id,
+-- invoice_number, total_amount, status, issue_date, due_date, created_at)
+-- atada a `clients`. Se agregan, de forma ADITIVA, las columnas que el módulo
+-- de finanzas necesita, y se aflojan los NOT NULL legacy que no usamos.
+ALTER TABLE invoices ALTER COLUMN client_id DROP NOT NULL;
+ALTER TABLE invoices ALTER COLUMN project_id DROP NOT NULL;
+ALTER TABLE invoices ALTER COLUMN issue_date SET DEFAULT CURRENT_DATE;
+
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS contact_id        UUID;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS quote_id          UUID;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS agent_id          UUID;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS series            TEXT DEFAULT 'A';
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_name       TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_email      TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_company    TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_address    TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_tax_id     TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subtotal          NUMERIC(14,2) NOT NULL DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS discount_amount   NUMERIC(14,2) NOT NULL DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS tax_amount        NUMERIC(14,2) NOT NULL DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_paid       NUMERIC(14,2) NOT NULL DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_due        NUMERIC(14,2) NOT NULL DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS currency          TEXT NOT NULL DEFAULT 'COP';
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS paid_date         DATE;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_method    TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS payment_reference TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes             TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS terms             TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS footer_notes      TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sent_at           TIMESTAMPTZ;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS sent_count        INT NOT NULL DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS created_by        UUID;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- ─── invoice_line_items ────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS invoice_line_items (
