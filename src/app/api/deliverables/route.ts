@@ -27,15 +27,24 @@ export async function GET() {
   const supabase = getServiceRoleClient()
   const { data, error } = await supabase
     .from('agent_deliverables')
-    .select('*, agents(name)')
+    .select('*')
     .order('created_at', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const deliverables = (data as Record<string, any>[] | null)?.map((d) => ({
+  // Resolver el nombre del agente por separado (agent_deliverables tiene 2 FKs
+  // a agents — agent_id y reviewed_by — así que el embed PostgREST es ambiguo).
+  const rows = (data as Record<string, any>[] | null) ?? []
+  const agentIds = [...new Set(rows.map((d) => d.agent_id).filter(Boolean))]
+  const agentMap: Record<string, string> = {}
+  if (agentIds.length) {
+    const { data: ags } = await supabase.from('agents').select('id, name').in('id', agentIds)
+    for (const a of (ags as Record<string, any>[] | null) ?? []) agentMap[a.id] = a.name
+  }
+  const deliverables = rows.map((d) => ({
     ...d,
-    agent_name: d.agents?.name ?? null,
-  })) ?? []
+    agent_name: d.agent_id ? agentMap[d.agent_id] ?? null : null,
+  }))
 
   return NextResponse.json({ deliverables })
 }

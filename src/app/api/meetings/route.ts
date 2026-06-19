@@ -28,11 +28,7 @@ export async function GET() {
   const supabase = getServiceRoleClient()
 
   const [{ data: meetings }, { data: followUps }] = await Promise.all([
-    supabase
-      .from('meetings')
-      .select('*, contacts(first_name, last_name, company_name)')
-      .order('scheduled_at', { ascending: true })
-      .limit(300),
+    supabase.from('meetings').select('*').order('scheduled_at', { ascending: true }).limit(300),
     supabase
       .from('leads')
       .select('id, name, company, email, lead_status, lead_score, next_follow_up_date')
@@ -41,13 +37,27 @@ export async function GET() {
       .limit(200),
   ])
 
-  const events = (meetings as Record<string, any>[] | null)?.map((m) => ({
+  // Nombre del contacto por separado (meetings.contact_id no tiene FK → sin embed).
+  const rows = (meetings as Record<string, any>[] | null) ?? []
+  const contactIds = [...new Set(rows.map((m) => m.contact_id).filter(Boolean))]
+  const contactMap: Record<string, { name: string; company: string | null }> = {}
+  if (contactIds.length) {
+    const { data: cs } = await supabase
+      .from('contacts')
+      .select('id, first_name, last_name, company_name')
+      .in('id', contactIds)
+    for (const c of (cs as Record<string, any>[] | null) ?? []) {
+      contactMap[c.id] = {
+        name: `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim(),
+        company: c.company_name ?? null,
+      }
+    }
+  }
+  const events = rows.map((m) => ({
     ...m,
-    contact_name: m.contacts
-      ? `${m.contacts.first_name ?? ''} ${m.contacts.last_name ?? ''}`.trim()
-      : null,
-    contact_company: m.contacts?.company_name ?? null,
-  })) ?? []
+    contact_name: m.contact_id ? contactMap[m.contact_id]?.name ?? null : null,
+    contact_company: m.contact_id ? contactMap[m.contact_id]?.company ?? null : null,
+  }))
 
   return NextResponse.json({ meetings: events, followUps: followUps ?? [] })
 }
