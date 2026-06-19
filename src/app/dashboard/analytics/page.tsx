@@ -98,6 +98,27 @@ export default function AnalyticsPage() {
       : 0
   }
 
+  function exportReport() {
+    const headers = ['Fecha', 'Revenue', 'Deals Ganados', 'Nuevos Contactos', 'Nuevos Leads', 'Mensajes recibidos', 'Mensajes enviados']
+    const rows = metrics.map((m) => [
+      m.date,
+      m.revenue ?? 0,
+      m.deals_won ?? 0,
+      m.new_contacts ?? 0,
+      m.new_leads ?? 0,
+      m.messages_received ?? 0,
+      m.messages_sent ?? 0,
+    ])
+    const csv = [headers, ...rows].map((r) => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `analytics-${format(new Date(), 'yyyy-MM-dd')}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   // Prepare chart data
   const revenueData = metrics.map(m => ({
     date: format(new Date(m.date), 'dd MMM', { locale: es }),
