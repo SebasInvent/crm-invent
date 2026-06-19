@@ -56,6 +56,14 @@ export default function AnalyticsPage() {
     fetchData()
   }, [])
 
+  // Recharts: el ResponsiveContainer mide 0px si el gráfico montó dentro de una
+  // pestaña oculta (Pipeline/Revenue). Un resize al cambiar de tab lo obliga a
+  // recalcular para que la torta/barras se dibujen.
+  useEffect(() => {
+    const t = setTimeout(() => window.dispatchEvent(new Event('resize')), 120)
+    return () => clearTimeout(t)
+  }, [activeTab])
+
   async function fetchData() {
     setLoading(true)
     
