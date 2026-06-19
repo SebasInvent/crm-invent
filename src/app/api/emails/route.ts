@@ -108,31 +108,28 @@ export async function POST(request: Request) {
     )
   }
 
-  // Best-effort logging — never fails the send if the DB rejects
+  // Best-effort logging — never fails the send if the DB rejects.
+  // Se registra SIEMPRE (no solo cuando hay client_id) para que el historial
+  // de la página de Emails refleje también los envíos del composer genérico.
   let logId: string | null = null
-  if (parsed.client_id) {
-    try {
-      const supabase = getServiceRoleClient()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: log } = await (supabase.from('email_logs') as any)
-        .insert({
-          client_id: parsed.client_id,
-          to_email: parsed.to,
-          subject: parsed.subject,
-          from_email: fromAddress,
-          status: 'sent',
-          sent_at: new Date().toISOString(),
-          // sent_by may or may not exist as a column depending on which
-          // migration ran last — service role bypasses validation but
-          // the DB will reject unknown columns. Wrap in try.
-          sent_by: auth.user.id,
-        })
-        .select('id')
-        .single()
-      logId = log?.id ?? null
-    } catch (dbError) {
-      console.warn('Email log insert failed (send still succeeded):', dbError)
-    }
+  try {
+    const supabase = getServiceRoleClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: log } = await (supabase.from('email_logs') as any)
+      .insert({
+        client_id: parsed.client_id ?? null,
+        to_email: parsed.to,
+        subject: parsed.subject,
+        from_email: fromAddress,
+        status: 'sent',
+        sent_at: new Date().toISOString(),
+        sent_by: auth.user.id,
+      })
+      .select('id')
+      .single()
+    logId = log?.id ?? null
+  } catch (dbError) {
+    console.warn('Email log insert failed (send still succeeded):', dbError)
   }
 
   return NextResponse.json({ ok: true, id: data?.id, log_id: logId })
