@@ -134,14 +134,12 @@ export default function AnalyticsPage() {
     deals: m.deals_won || 0
   }))
 
-  const pipelineData = pipelineStats
-    .map(p => ({
-      name: p.stage_name,
-      value: Number(p.total_value) || 0,
-      deals: Number(p.deals_count) || 0,
-      color: p.color,
-    }))
-    .filter(p => p.value > 0) // sin etapas en $0 (evita slices degenerados)
+  const pipelineData = pipelineStats.map(p => ({
+    name: p.stage_name,
+    value: Number(p.total_value) || 0,
+    deals: Number(p.deals_count) || 0,
+    color: p.color,
+  }))
 
   const activityData = metrics.map(m => ({
     date: format(new Date(m.date), 'dd MMM', { locale: es }),
@@ -462,33 +460,35 @@ export default function AnalyticsPage() {
               <CardContent>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={pipelineData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, value }) => `${name}: $${(value / 1000).toFixed(0)}k`}
-                        innerRadius={55}
-                        outerRadius={100}
-                        paddingAngle={3}
-                        minAngle={4}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
+                    <BarChart data={pipelineData} layout="vertical" margin={{ left: 10, right: 30 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
+                      <XAxis
+                        type="number"
+                        stroke="#52525b"
+                        fontSize={12}
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                      />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        stroke="#52525b"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                        width={95}
+                      />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '6px' }}
+                        formatter={(value: number) => [`$${value.toLocaleString()}`, 'Valor']}
+                      />
+                      <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                         {pipelineData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color || COLORS[index % COLORS.length]} />
                         ))}
-                      </Pie>
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: '#18181b', 
-                          border: '1px solid #27272a',
-                          borderRadius: '6px'
-                        }}
-                        formatter={(value: number) => `$${value.toLocaleString()}`}
-                      />
-                    </PieChart>
+                      </Bar>
+                    </BarChart>
                   </ResponsiveContainer>
                 </div>
               </CardContent>
