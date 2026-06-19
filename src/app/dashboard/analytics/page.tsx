@@ -318,7 +318,7 @@ export default function AnalyticsPage() {
             </CardHeader>
             <CardContent>
               <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={300}>
                   <AreaChart data={activityData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                     <XAxis 
@@ -372,7 +372,7 @@ export default function AnalyticsPage() {
             </CardHeader>
             <CardContent>
               <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={revenueData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                     <XAxis 
@@ -415,7 +415,7 @@ export default function AnalyticsPage() {
             </CardHeader>
             <CardContent>
               <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={300}>
                   <LineChart data={revenueData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                     <XAxis 
@@ -461,7 +461,7 @@ export default function AnalyticsPage() {
               </CardHeader>
               <CardContent>
                 <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
                       <Pie
                         data={pipelineData}
