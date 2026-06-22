@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 
@@ -63,8 +63,8 @@ export async function POST(request: Request) {
   const block = rateLimitOrBlock(request, { window: '1m', max: 60, key: 'contacts-create' })
   if (block) return block
 
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   let parsed: z.infer<typeof contactCreateSchema>
   try {
@@ -84,7 +84,8 @@ export async function POST(request: Request) {
     ...parsed,
     website: parsed.website || null,
     linkedin_url: parsed.linkedin_url || null,
-    created_by: auth.user.id,
+    created_by: org.user.id,
+    org_id: org.orgId,
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

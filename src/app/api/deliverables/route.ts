@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireAuth, requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 
@@ -21,13 +21,14 @@ const createSchema = z.object({
 })
 
 export async function GET() {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   const supabase = getServiceRoleClient()
   const { data, error } = await supabase
     .from('agent_deliverables')
     .select('*')
+    .eq('org_id', org.orgId)
     .order('created_at', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -53,8 +54,8 @@ export async function POST(request: Request) {
   const block = rateLimitOrBlock(request, { window: '1m', max: 60, key: 'deliverables-create' })
   if (block) return block
 
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   let parsed: z.infer<typeof createSchema>
   try {
@@ -77,7 +78,8 @@ export async function POST(request: Request) {
     approved_for_send: false,
     sent_to_client: false,
     generated_at: new Date().toISOString(),
-    created_by: auth.user.id,
+    created_by: org.user.id,
+    org_id: org.orgId,
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAuth } from '@/lib/api-auth'
+import { requireOrg } from '@/lib/api-auth'
 import { getServiceRoleClient } from '@/lib/supabase'
 
 /**
@@ -9,8 +9,8 @@ import { getServiceRoleClient } from '@/lib/supabase'
  * lo reasigna el trigger (quote_number queda null → COT-YYYY-#### nuevo).
  */
 export async function POST(_request: Request, { params }: { params: { id: string } }) {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   const supabase = getServiceRoleClient()
 
@@ -44,7 +44,8 @@ export async function POST(_request: Request, { params }: { params: { id: string
     notes: src.notes,
     terms_and_conditions: src.terms_and_conditions,
     status: 'draft',
-    created_by: auth.user.id,
+    created_by: org.user.id,
+    org_id: org.orgId,
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,6 +66,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
   if (items && items.length > 0) {
     const cloned = (items as Record<string, unknown>[]).map((it) => ({
       quote_id: newQuote.id,
+      org_id: org.orgId,
       product_id: it.product_id,
       description: it.description,
       quantity: it.quantity,

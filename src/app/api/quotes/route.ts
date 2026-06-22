@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireAuth, requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 
@@ -64,8 +64,8 @@ export async function POST(request: Request) {
   const block = rateLimitOrBlock(request, { window: '1m', max: 60, key: 'quotes-create' })
   if (block) return block
 
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   let parsed: z.infer<typeof quoteCreateSchema>
   try {
@@ -128,7 +128,8 @@ export async function POST(request: Request) {
     notes: parsed.notes ?? null,
     terms_and_conditions: parsed.terms_and_conditions ?? null,
     status: 'draft',
-    created_by: auth.user.id,
+    created_by: org.user.id,
+    org_id: org.orgId,
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -141,7 +142,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error?.message ?? 'insert failed' }, { status: 500 })
   }
 
-  const itemsToInsert = lines.map((l) => ({ ...l, quote_id: quote.id }))
+  const itemsToInsert = lines.map((l) => ({ ...l, quote_id: quote.id, org_id: org.orgId }))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: itemsError } = await (supabase.from('quote_line_items') as any).insert(itemsToInsert)
 

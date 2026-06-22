@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAuth } from '@/lib/api-auth'
+import { requireOrg } from '@/lib/api-auth'
 import { getServiceRoleClient } from '@/lib/supabase'
 
 /**
@@ -7,13 +7,14 @@ import { getServiceRoleClient } from '@/lib/supabase'
  * Pagos recientes (con el número de factura) para el panel "Últimos Pagos".
  */
 export async function GET() {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   const supabase = getServiceRoleClient()
   const { data, error } = await supabase
     .from('payments')
     .select('*, invoices(invoice_number)')
+    .eq('org_id', org.orgId)
     .order('payment_date', { ascending: false })
     .limit(50)
 

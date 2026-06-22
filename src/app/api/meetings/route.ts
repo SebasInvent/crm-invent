@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireAuth, requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 
@@ -22,16 +22,17 @@ const createSchema = z.object({
 })
 
 export async function GET() {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   const supabase = getServiceRoleClient()
 
   const [{ data: meetings }, { data: followUps }] = await Promise.all([
-    supabase.from('meetings').select('*').order('scheduled_at', { ascending: true }).limit(300),
+    supabase.from('meetings').select('*').eq('org_id', org.orgId).order('scheduled_at', { ascending: true }).limit(300),
     supabase
       .from('leads')
       .select('id, name, company, email, lead_status, lead_score, next_follow_up_date')
+      .eq('org_id', org.orgId)
       .not('next_follow_up_date', 'is', null)
       .order('next_follow_up_date', { ascending: true })
       .limit(200),
@@ -66,8 +67,8 @@ export async function POST(request: Request) {
   const block = rateLimitOrBlock(request, { window: '1m', max: 60, key: 'meetings-create' })
   if (block) return block
 
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   let parsed: z.infer<typeof createSchema>
   try {
@@ -88,7 +89,8 @@ export async function POST(request: Request) {
     contact_id: parsed.contact_id ?? null,
     project_id: parsed.project_id ?? null,
     status: 'scheduled',
-    created_by: auth.user.id,
+    created_by: org.user.id,
+    org_id: org.orgId,
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 import { recordActivity } from '@/lib/activity-log'
@@ -32,8 +32,8 @@ export async function POST(request: Request) {
   const block = rateLimitOrBlock(request, { window: '1m', max: 60, key: 'deals-create' })
   if (block) return block
 
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   let parsed: z.infer<typeof dealCreateSchema>
   try {
@@ -74,7 +74,8 @@ export async function POST(request: Request) {
     status: parsed.status,
     competitor: parsed.competitor,
     owner_id: parsed.owner_id,
-    created_by: auth.user.id,
+    created_by: org.user.id,
+    org_id: org.orgId,
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -96,8 +97,8 @@ export async function POST(request: Request) {
       title: `Deal creado: ${parsed.name}`,
       description: parsed.description ?? null,
       metadata: {
-        actor_user_id: auth.user.id,
-        actor_email: auth.user.email,
+        actor_user_id: org.user.id,
+        actor_email: org.user.email,
         value: parsed.value,
         currency: parsed.currency,
       },

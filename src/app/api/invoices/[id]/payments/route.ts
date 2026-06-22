@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireOrg } from '@/lib/api-auth'
 import { getServiceRoleClient } from '@/lib/supabase'
 
 /**
@@ -20,8 +20,8 @@ const paymentSchema = z.object({
 })
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   let parsed: z.infer<typeof paymentSchema>
   try {
@@ -43,7 +43,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
     reference_number: parsed.reference_number ?? null,
     notes: parsed.notes ?? null,
     status: 'completed',
-    created_by: auth.user.id,
+    created_by: org.user.id,
+    org_id: org.orgId,
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
