@@ -53,5 +53,24 @@ export async function GET(request: NextRequest) {
     )
   }
 
+  // Red de seguridad multi-tenant: asegurar workspace + profile (el trigger
+  // ya lo hace para usuarios nuevos; esto cubre usuarios previos al trigger).
+  // Envuelto para que NUNCA rompa el login.
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (user) {
+      const { getServiceRoleClient } = await import('@/lib/supabase')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (getServiceRoleClient() as any).rpc('ensure_profile', {
+        p_user_id: user.id,
+        p_email: user.email,
+      })
+    }
+  } catch {
+    /* nunca bloquear el login por el onboarding */
+  }
+
   return response
 }

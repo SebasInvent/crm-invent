@@ -17,6 +17,7 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import type { Session, User } from '@supabase/supabase-js'
+import { getServiceRoleClient } from '@/lib/supabase'
 
 /**
  * Get the current Supabase session from cookies on the server.
@@ -141,4 +142,62 @@ export function validateWebhookToken(
     diff |= provided.charCodeAt(i) ^ expectedToken.charCodeAt(i)
   }
   return diff === 0
+}
+
+/**
+ * Multi-tenant: resuelve la organización (workspace) ACTIVA del usuario.
+ * - Usa profiles.active_org_id; si no es válida o no es miembro, cae a su
+ *   primera membresía.
+ * - Las rutas API que escriben datos deben setear `org_id: orgId` al insertar
+ *   y filtrar `.eq('org_id', orgId)` al leer (el service-role bypassa RLS).
+ *
+ *   const org = await requireOrg()
+ *   if (org.error) return org.error  // 401/403
+ *   // org.orgId, org.role, org.user
+ */
+export async function getActiveOrg(): Promise<
+  | { error: NextResponse; orgId: null; role: null; user: null }
+  | { error: null; orgId: string; role: string; user: User }
+> {
+  const auth = await requireAuth()
+  if (auth.error) return { error: auth.error, orgId: null, role: null, user: null }
+
+  const svc = getServiceRoleClient()
+
+  // Membresías del usuario.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: mem } = await (svc.from('organization_members') as any)
+    .select('org_id, role')
+    .eq('user_id', auth.user.id)
+  const memberships = (mem as Array<{ org_id: string; role: string }> | null) ?? []
+  const ids = memberships.map((m) => m.org_id)
+
+  // Org activa del profile (si sigue siendo válida).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: prof } = await (svc.from('profiles') as any)
+    .select('active_org_id')
+    .eq('id', auth.user.id)
+    .single()
+  let orgId: string | null = (prof as { active_org_id?: string } | null)?.active_org_id ?? null
+  if (!orgId || !ids.includes(orgId)) orgId = ids[0] ?? null
+
+  if (!orgId) {
+    return {
+      error: NextResponse.json(
+        { error: 'no_org', hint: 'El usuario no pertenece a ninguna organización.' },
+        { status: 403 },
+      ),
+      orgId: null,
+      role: null,
+      user: null,
+    }
+  }
+
+  const role = memberships.find((m) => m.org_id === orgId)?.role ?? 'member'
+  return { error: null, orgId, role, user: auth.user }
+}
+
+/** Alias semántico. */
+export async function requireOrg() {
+  return getActiveOrg()
 }
