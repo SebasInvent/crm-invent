@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth, requireOrg } from '@/lib/api-auth'
+import { requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 
@@ -45,13 +45,14 @@ function computeLine(item: z.infer<typeof lineItemSchema>) {
 }
 
 export async function GET() {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   const supabase = getServiceRoleClient()
   const { data, error } = await supabase
     .from('quotes_view')
     .select('*')
+    .eq('org_id', org.orgId)
     .order('created_at', { ascending: false })
 
   if (error) {
