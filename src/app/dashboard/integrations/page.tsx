@@ -74,21 +74,26 @@ export default function IntegrationsPage() {
   async function fetchData() {
     setLoading(true)
     
-    const { data: integrationsData } = await supabase
-      .from('integrations')
+    // Cast a any: el cliente no tiene tipos generados para estas tablas
+    // (mismo patrón que las rutas API). `nullsFirst: false` = NULLS LAST
+    // (supabase-js v2 no tiene opción `nullsLast`).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: integrationsData } = await (supabase.from('integrations') as any)
       .select('*')
       .eq('status', 'active')
-      .order('featured_order', { ascending: true, nullsLast: true })
-    
-    const { data: installedData } = await supabase
-      .from('integration_installs')
+      .order('featured_order', { ascending: true, nullsFirst: false })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: installedData } = await (supabase.from('integration_installs') as any)
       .select('*, integration:integration_id(name, provider_logo_url)')
       .neq('status', 'uninstalled')
-    
+
     if (integrationsData) {
       // Mark installed integrations
-      const installedIds = new Set(installedData?.map(i => i.integration_id) || [])
-      setIntegrations(integrationsData.map(int => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const installedIds = new Set((installedData as any[] | null)?.map(i => i.integration_id) || [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setIntegrations((integrationsData as any[]).map(int => ({
         ...int,
         is_installed: installedIds.has(int.id)
       })) as Integration[])
@@ -122,8 +127,8 @@ export default function IntegrationsPage() {
   }
 
   async function uninstall(installId: string) {
-    await supabase
-      .from('integration_installs')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase.from('integration_installs') as any)
       .update({ status: 'uninstalled', uninstalled_at: new Date().toISOString() })
       .eq('id', installId)
     

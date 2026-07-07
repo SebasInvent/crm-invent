@@ -47,6 +47,16 @@ export class ContactService {
   private supabase = getServiceRoleClient()
 
   /**
+   * El cliente service-role no tiene tipos generados para estas tablas
+   * (las filas resuelven a `never`). Mismo patrón (cast a any) que usan
+   * las rutas API (deals, aria/*) hasta regenerar los tipos de Supabase.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private t(table: string): any {
+    return this.supabase.from(table)
+  }
+
+  /**
    * Busca un contacto existente por múltiples criterios
    * Orden de búsqueda: email → phone → external_id
    */
@@ -60,8 +70,7 @@ export class ContactService {
 
     // 1. Buscar por email (más confiable)
     if (email && email.trim() !== '') {
-      const { data, error } = await this.supabase
-        .from('contacts')
+      const { data, error } = await this.t('contacts')
         .select('*')
         .ilike('email', email.trim())
         .maybeSingle()
@@ -78,8 +87,7 @@ export class ContactService {
     // 2. Buscar por teléfono
     if (phone && phone.trim() !== '') {
       const cleanPhone = phone.replace(/[^\d]/g, '')
-      const { data, error } = await this.supabase
-        .from('contacts')
+      const { data, error } = await this.t('contacts')
         .select('*')
         .or(`phone.ilike.%${phone.trim()}%,phone.ilike.%${cleanPhone}%`)
         .maybeSingle()
@@ -97,8 +105,7 @@ export class ContactService {
     if (external_id && source) {
       const fieldName = this.getExternalIdField(source)
       
-      const { data, error } = await this.supabase
-        .from('contacts')
+      const { data, error } = await this.t('contacts')
         .select('*')
         .eq(`custom_fields->>${fieldName}`, external_id)
         .maybeSingle()
@@ -155,8 +162,7 @@ export class ContactService {
           updateData.custom_fields = customFields
         }
 
-        const { data: updated, error } = await this.supabase
-          .from('contacts')
+        const { data: updated, error } = await this.t('contacts')
           .update(updateData)
           .eq('id', contact.id)
           .select()
@@ -237,8 +243,7 @@ export class ContactService {
       custom_fields: Object.keys(customFields).length > 0 ? customFields : undefined
     }
 
-    const { data, error } = await this.supabase
-      .from('contacts')
+    const { data, error } = await this.t('contacts')
       .insert(contactData)
       .select()
       .single()
@@ -255,8 +260,7 @@ export class ContactService {
    * Actualiza la fecha de última interacción
    */
   async updateLastInteraction(contactId: string): Promise<void> {
-    const { error } = await this.supabase
-      .from('contacts')
+    const { error } = await this.t('contacts')
       .update({ 
         last_interaction_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -301,8 +305,7 @@ export class ContactService {
 
     for (const { table, field, newField } of tablesToUpdate) {
       const targetField = newField || field
-      const { error } = await this.supabase
-        .from(table)
+      const { error } = await this.t(table)
         .update({ [targetField]: primaryId })
         .eq(field, duplicateId)
 
@@ -312,8 +315,7 @@ export class ContactService {
     }
 
     // Marcar duplicado como inactivo o eliminar
-    await this.supabase
-      .from('contacts')
+    await this.t('contacts')
       .update({ 
         status: 'inactive',
         custom_fields: { 
@@ -330,8 +332,7 @@ export class ContactService {
    * Busca contactos potencialmente duplicados
    */
   async findPotentialDuplicates(contactId: string): Promise<any[]> {
-    const { data: contact } = await this.supabase
-      .from('contacts')
+    const { data: contact } = await this.t('contacts')
       .select('email, phone')
       .eq('id', contactId)
       .single()
@@ -351,8 +352,7 @@ export class ContactService {
 
     if (conditions.length === 0) return []
 
-    const { data: duplicates } = await this.supabase
-      .from('contacts')
+    const { data: duplicates } = await this.t('contacts')
       .select('*')
       .or(conditions.join(','))
       .neq('id', contactId)

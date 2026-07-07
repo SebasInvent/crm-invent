@@ -119,8 +119,8 @@ export default function ApiKeysPage() {
   }
 
   async function revokeKey(id: string) {
-    await supabase
-      .from('api_keys')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase.from('api_keys') as any)
       .update({ is_active: false })
       .eq('id', id)
     
