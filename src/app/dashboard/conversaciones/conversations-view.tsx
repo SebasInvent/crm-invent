@@ -230,7 +230,7 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
     },
-    successMessage: ({}, input) => (input.newState ? 'Bot reanudado' : 'Bot pausado'),
+    successMessage: (_data, input) => (input.newState ? 'Bot reanudado' : 'Bot pausado'),
     errorMessage: 'No se pudo cambiar el estado del bot',
   })
 
@@ -268,7 +268,7 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
     },
-    successMessage: ({}, input) =>
+    successMessage: (_data, input) =>
       `Marcado como ${STATUS_LABELS[input.newStatus] || input.newStatus}`,
     errorMessage: 'No se pudo actualizar el estado',
   })

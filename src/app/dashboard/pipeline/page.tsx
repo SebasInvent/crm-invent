@@ -186,7 +186,7 @@ export default function PipelinePage() {
       if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`)
     },
     invalidateKeys: [queryKeys.pipeline.deals],
-    successMessage: ({}, input) =>
+    successMessage: (_data, input) =>
       `Movido a "${input.toStageName}" • ${input.toProbability}%`,
     errorMessage: 'No se pudo mover el deal',
   })
