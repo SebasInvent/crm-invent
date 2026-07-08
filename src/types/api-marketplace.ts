@@ -215,6 +215,8 @@ export interface IntegrationInstall {
   integration_name?: string;
   integration_logo?: string;
   installed_by_name?: string;
+  // Embed de PostgREST: `integration:integration_id(name, provider_logo_url)`
+  integration?: { name?: string; provider_logo_url?: string } | null;
 }
 
 // System Events
