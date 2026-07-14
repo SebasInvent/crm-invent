@@ -26,6 +26,7 @@ import {
   Megaphone,
   Menu,
   Target,
+  CalendarCheck,
   X,
 } from 'lucide-react'
 
@@ -46,6 +47,7 @@ const navigation = [
   { name: 'Entregables', href: '/dashboard/deliverables', icon: Package },
   { name: 'Calendario', href: '/dashboard/calendar', icon: Calendar },
   { name: 'Estrategia', href: '/dashboard/estrategia', icon: Megaphone },
+  { name: 'Publicaciones', href: '/dashboard/publicaciones', icon: CalendarCheck },
   { name: 'Emails', href: '/dashboard/emails', icon: Mail },
   { name: 'Configuración', href: '/dashboard/settings', icon: Settings },
 ]
