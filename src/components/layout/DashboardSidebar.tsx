@@ -23,6 +23,7 @@ import {
   Puzzle,
   LogOut,
   MessageCircle,
+  Megaphone,
   Menu,
   X,
 } from 'lucide-react'
@@ -42,6 +43,7 @@ const navigation = [
   { name: 'Agentes', href: '/dashboard/agents', icon: Users },
   { name: 'Entregables', href: '/dashboard/deliverables', icon: Package },
   { name: 'Calendario', href: '/dashboard/calendar', icon: Calendar },
+  { name: 'Estrategia', href: '/dashboard/estrategia', icon: Megaphone },
   { name: 'Emails', href: '/dashboard/emails', icon: Mail },
   { name: 'Configuración', href: '/dashboard/settings', icon: Settings },
 ]
