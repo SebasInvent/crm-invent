@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
 import { 
   Plus, 
   Search, 
@@ -64,6 +65,7 @@ export default function IntegrationsPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   
   const [isInstallDialogOpen, setIsInstallDialogOpen] = useState(false)
+  const [reconfigInstallId, setReconfigInstallId] = useState<string | null>(null)
   const [selectedIntegration, setSelectedIntegration] = useState<Integration | null>(null)
   const [configValues, setConfigValues] = useState<Record<string, any>>({})
 
@@ -106,23 +108,55 @@ export default function IntegrationsPage() {
   async function installIntegration(integration: Integration) {
     setSelectedIntegration(integration)
     setConfigValues({})
+    setReconfigInstallId(null)
+    setIsInstallDialogOpen(true)
+  }
+
+  /** "Configurar" reutiliza el mismo diálogo, prellenado, y hace UPDATE.
+   *  (Antes navegaba a /dashboard/integrations/[id], ruta inexistente → 404.) */
+  function configureIntegration(integration: Integration) {
+    const install = installed.find(
+      (i) => i.integration_id === integration.id && i.status === 'active'
+    )
+    setSelectedIntegration(integration)
+    setConfigValues(((install?.config as Record<string, string>) || {}))
+    setReconfigInstallId(install?.id ?? null)
     setIsInstallDialogOpen(true)
   }
 
   async function confirmInstall() {
     if (!selectedIntegration) return
-    
-    const { error } = await supabase
-      .from('integration_installs')
-      .insert({
-        integration_id: selectedIntegration.id,
-        config: configValues,
-        status: 'active'
-      } as any)
-    
+
+    // Validar campos requeridos del config antes de guardar
+    const missing = (selectedIntegration.config_fields || [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((f: any) => f.required && !String(configValues[f.key] ?? '').trim())
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((f: any) => f.label || f.key)
+    if (missing.length) {
+      toast.error(`Completa los campos requeridos: ${missing.join(', ')}`)
+      return
+    }
+
+    const { error } = reconfigInstallId
+      ? await (supabase.from('integration_installs') as any)
+          .update({ config: configValues })
+          .eq('id', reconfigInstallId)
+      : await supabase
+          .from('integration_installs')
+          .insert({
+            integration_id: selectedIntegration.id,
+            config: configValues,
+            status: 'active'
+          } as any)
+
     if (!error) {
+      toast.success(reconfigInstallId ? 'Configuración guardada' : 'Integración instalada')
       setIsInstallDialogOpen(false)
+      setReconfigInstallId(null)
       fetchData()
+    } else {
+      toast.error(`No se pudo guardar: ${error.message}`)
     }
   }
 
@@ -216,7 +250,7 @@ export default function IntegrationsPage() {
                   </p>
                   <Button 
                     className="w-full mt-4 bg-white text-black hover:bg-zinc-200"
-                    onClick={() => integration.is_installed ? router.push(`/dashboard/integrations/${integration.id}`) : installIntegration(integration)}
+                    onClick={() => integration.is_installed ? configureIntegration(integration) : installIntegration(integration)}
                   >
                     {integration.is_installed ? 'Configurar' : 'Instalar'}
                   </Button>
@@ -344,7 +378,7 @@ export default function IntegrationsPage() {
                               variant="outline"
                               size="sm"
                               className="flex-1 border-zinc-700 text-zinc-300"
-                              onClick={() => router.push(`/dashboard/integrations/${integration.id}`)}
+                              onClick={() => configureIntegration(integration)}
                             >
                               <Settings className="h-4 w-4 mr-1" />
                               Configurar
@@ -356,11 +390,21 @@ export default function IntegrationsPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="bg-zinc-900 border-zinc-800">
-                                <DropdownMenuItem className="text-white">
+                                <DropdownMenuItem
+                                  className="text-white"
+                                  disabled={!integration.documentation_url}
+                                  onClick={() => integration.documentation_url && window.open(integration.documentation_url, '_blank')}
+                                >
                                   <ExternalLink className="h-4 w-4 mr-2" />
                                   Documentación
                                 </DropdownMenuItem>
-                                <DropdownMenuItem className="text-red-400">
+                                <DropdownMenuItem
+                                  className="text-red-400"
+                                  onClick={() => {
+                                    const inst = installed.find((i) => i.integration_id === integration.id && i.status === 'active')
+                                    if (inst) uninstall(inst.id)
+                                  }}
+                                >
                                   <Trash2 className="h-4 w-4 mr-2" />
                                   Desinstalar
                                 </DropdownMenuItem>

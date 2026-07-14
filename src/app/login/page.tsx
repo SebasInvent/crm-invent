@@ -16,6 +16,16 @@ export default function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const router = useRouter()
 
+  /**
+   * Destino post-login: respeta ?redirect= (lo setea el middleware al
+   * proteger rutas). Solo rutas internas (previene open-redirect). Se lee
+   * de window.location en el handler para no requerir useSearchParams+Suspense.
+   */
+  function postLoginDest(): string {
+    const r = new URLSearchParams(window.location.search).get('redirect')
+    return r && r.startsWith('/') && !r.startsWith('//') ? r : '/dashboard'
+  }
+
   async function handleGoogleLogin() {
     setGoogleLoading(true)
     setError('')
@@ -23,7 +33,7 @@ export default function LoginPage() {
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(postLoginDest())}`,
       },
     })
     if (oauthError) {
@@ -50,7 +60,7 @@ export default function LoginPage() {
       return
     }
 
-    router.push('/dashboard')
+    router.push(postLoginDest())
     router.refresh()
   }
 

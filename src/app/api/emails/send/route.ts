@@ -7,11 +7,51 @@ import { requireAuth } from '@/lib/api-auth'
 // Validation schema for the send-email request body
 const sendEmailSchema = z.object({
   to: z.string().email('Invalid recipient email'),
-  template: z.enum(['deliverable_ready', 'task_assigned']),
-  data: z.record(z.unknown()),
+  template: z.enum(['deliverable_ready', 'task_assigned', 'custom']),
+  data: z.record(z.unknown()).optional().default({}),
+  // Para template 'custom' (respuestas libres desde el Inbox):
+  subject: z.string().min(1).max(200).optional(),
+  text: z.string().min(1).max(10000).optional(),
   client_id: z.string().uuid().optional().nullable(),
   deliverable_id: z.string().uuid().optional().nullable(),
 })
+
+/** Escapa HTML de input libre antes de inyectarlo en el template. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+// Template para mensajes libres (Inbox → email)
+function getCustomEmailTemplate(data: { subject: string; text: string }) {
+  return {
+    subject: data.subject,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body { font-family: 'Inter', -apple-system, sans-serif; background: #000; color: #fff; }
+            .container { max-width: 600px; margin: 0 auto; padding: 40px 20px; }
+            .logo { width: 160px; margin-bottom: 30px; }
+            p { line-height: 1.6; margin-bottom: 16px; white-space: pre-wrap; }
+            .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #333; font-size: 14px; color: #888; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <img src="https://www.inventagency.co/logo-white.png" alt="Invent Agency" class="logo" />
+            <p>${escapeHtml(data.text).replace(/\n/g, '<br/>')}</p>
+            <div class="footer"><p>Equipo Invent Agency · inventagency.co</p></div>
+          </div>
+        </body>
+      </html>
+    `,
+  }
+}
 
 let resend: Resend | null = null
 
@@ -157,7 +197,7 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-    const { to, template, data, client_id, deliverable_id } = parsed.data
+    const { to, template, data, subject, text, client_id, deliverable_id } = parsed.data
 
     const from = process.env.FROM_EMAIL || 'hola@inventagency.co'
     let emailContent: { subject: string; html: string }
@@ -169,6 +209,15 @@ export async function POST(request: Request) {
         break
       case 'task_assigned':
         emailContent = getTaskAssignedEmailTemplate(data as Parameters<typeof getTaskAssignedEmailTemplate>[0])
+        break
+      case 'custom':
+        if (!subject || !text) {
+          return NextResponse.json(
+            { error: "template 'custom' requiere subject y text" },
+            { status: 400 }
+          )
+        }
+        emailContent = getCustomEmailTemplate({ subject, text })
         break
       default:
         return NextResponse.json(
