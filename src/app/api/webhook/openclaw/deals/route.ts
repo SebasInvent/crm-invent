@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { NextResponse } from 'next/server'
+import { validateWebhookToken } from '@/lib/api-auth'
 import { getServiceRoleClient } from '@/lib/supabase'
 
 /**
@@ -16,6 +17,12 @@ import { getServiceRoleClient } from '@/lib/supabase'
  */
 
 export async function POST(request: Request) {
+  // Verificación opt-in: si OPENCLAW_WEBHOOK_TOKEN está seteado, se exige token
+  // (?token= o header x-webhook-token). Sin el env, se mantiene compatibilidad.
+  const _wt = process.env.OPENCLAW_WEBHOOK_TOKEN
+  if (_wt && !validateWebhookToken(request, _wt)) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
   try {
     const body = await request.json()
     const { 

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { NextResponse } from 'next/server'
+import { validateWebhookToken } from '@/lib/api-auth'
 import { getServiceRoleClient } from '@/lib/supabase'
 import { contactService } from '@/lib/contact-service'
 
@@ -11,6 +12,12 @@ import { contactService } from '@/lib/contact-service'
  * POST /api/webhook/email/reply
  */
 export async function POST(request: Request) {
+  // Verificación opt-in: si EMAIL_WEBHOOK_TOKEN está seteado, se exige token
+  // (?token= o header x-webhook-token). Sin el env, se mantiene compatibilidad.
+  const _wt = process.env.EMAIL_WEBHOOK_TOKEN
+  if (_wt && !validateWebhookToken(request, _wt)) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
   try {
     console.log('[Email Webhook] Received webhook:', new Date().toISOString())
     
@@ -186,29 +193,32 @@ async function handleEmailReply(body: any, supabase: any) {
         status: 'active',
         last_message_at: new Date().toISOString(),
         last_message_preview: (emailData.text || emailData.html || '').substring(0, 100),
-        last_message_direction: 'inbound',
-        unread_count: supabase.rpc('increment_unread_count', { 
-          contact_id: contact.id,
-          channel_id: null 
-        })
+        last_message_direction: 'inbound'
       }, {
         onConflict: 'contact_id,channel_id'
       })
       .select()
       .single()
-    
+
     if (convError && convError.code !== '23505') {
       console.error('[Email Reply] Error updating conversation:', convError)
     }
-    
-    // 5. Actualizar contador de interacciones del contacto
+
+    // 4b. Incrementar no-leídos vía RPC (aparte: un builder de rpc() jamás
+    // debe ir como VALOR de columna en un upsert — escribía basura).
+    const { error: unreadErr } = await supabase.rpc('increment_unread_count', {
+      contact_id: contact.id,
+      channel_id: null
+    })
+    if (unreadErr) console.error('[Email Reply] increment_unread_count:', unreadErr.message)
+
+    // 5. Actualizar contador de interacciones del contacto (mismo fix que 4b)
     await supabase
       .from('contacts')
-      .update({
-        last_interaction_at: new Date().toISOString(),
-        interaction_count: supabase.rpc('increment_interaction_count', { contact_id: contact.id })
-      })
+      .update({ last_interaction_at: new Date().toISOString() })
       .eq('id', contact.id)
+    const { error: interErr } = await supabase.rpc('increment_interaction_count', { contact_id: contact.id })
+    if (interErr) console.error('[Email Reply] increment_interaction_count:', interErr.message)
     
     // 6. Si venía de una campaña, actualizar estadísticas
     if (campaignId) {
@@ -231,7 +241,7 @@ async function handleEmailReply(body: any, supabase: any) {
       contact_id: contact.id,
       message_id: message.id,
       conversation_id: conversation?.id,
-      is_new_contact: !contact.created_at
+      is_new_contact: result.is_new
     })
     
   } catch (error) {
@@ -248,19 +258,28 @@ async function handleEmailOpen(body: any, supabase: any) {
   const { message_id, email } = extractTrackingData(body)
   
   if (message_id) {
+    // Leer-modificar-escribir: preservar el metadata existente e incrementar
+    // el contador de verdad (un builder rpc() como valor escribía basura).
+    const { data: row } = await supabase
+      .from('unified_messages')
+      .select('metadata')
+      .eq('id', message_id)
+      .maybeSingle()
+    const meta = (row?.metadata && typeof row.metadata === 'object') ? row.metadata : {}
     await supabase
       .from('unified_messages')
       .update({
         status: 'read',
         read_at: new Date().toISOString(),
         metadata: {
+          ...meta,
           opened_at: new Date().toISOString(),
-          open_count: supabase.rpc('increment_open_count', { message_id })
+          open_count: (typeof meta.open_count === 'number' ? meta.open_count : 0) + 1
         }
       })
       .eq('id', message_id)
   }
-  
+
   return NextResponse.json({ success: true, event: 'email_open' })
 }
 
@@ -269,18 +288,26 @@ async function handleEmailClick(body: any, supabase: any) {
   const { message_id, url } = extractTrackingData(body)
   
   if (message_id) {
+    // Mismo patrón leer-modificar-escribir que en handleEmailOpen.
+    const { data: row } = await supabase
+      .from('unified_messages')
+      .select('metadata')
+      .eq('id', message_id)
+      .maybeSingle()
+    const meta = (row?.metadata && typeof row.metadata === 'object') ? row.metadata : {}
     await supabase
       .from('unified_messages')
       .update({
         metadata: {
+          ...meta,
           clicked_at: new Date().toISOString(),
           clicked_url: url,
-          click_count: supabase.rpc('increment_click_count', { message_id })
+          click_count: (typeof meta.click_count === 'number' ? meta.click_count : 0) + 1
         }
       })
       .eq('id', message_id)
   }
-  
+
   return NextResponse.json({ success: true, event: 'email_click' })
 }
 

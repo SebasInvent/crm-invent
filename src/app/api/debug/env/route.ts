@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/api-auth'
 
 /**
  * GET /api/debug/env
@@ -14,6 +15,9 @@ import { NextResponse } from 'next/server'
  */
 
 export async function GET() {
+  // Endpoint interno: exige sesión (expone/escribe datos reales con service-role).
+  const _auth = await requireAuth()
+  if (_auth.error) return _auth.error
   return NextResponse.json({
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? null,
     has_anon_key: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,

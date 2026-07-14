@@ -177,7 +177,7 @@ export default function AnalyticsPage() {
           <h1 className="text-3xl font-bold text-white">Analytics & Insights</h1>
           <p className="text-zinc-400 mt-1">Métricas, predicciones e inteligencia de negocio</p>
         </div>
-        <Button variant="outline" className="border-zinc-700 text-zinc-300">
+        <Button variant="outline" className="border-zinc-700 text-zinc-300" onClick={exportReport}>
           <BarChart3 className="h-4 w-4 mr-2" />
           Exportar Reporte
         </Button>

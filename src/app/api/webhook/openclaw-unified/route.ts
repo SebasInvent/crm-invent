@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { NextResponse } from 'next/server'
+import { validateWebhookToken } from '@/lib/api-auth'
 import { getServiceRoleClient } from '@/lib/supabase'
 
 // Tipos de eventos OpenClaw
@@ -27,6 +28,12 @@ interface OpenClawPayload {
 }
 
 export async function POST(request: Request) {
+  // Verificación opt-in: si OPENCLAW_WEBHOOK_TOKEN está seteado, se exige token
+  // (?token= o header x-webhook-token). Sin el env, se mantiene compatibilidad.
+  const _wt = process.env.OPENCLAW_WEBHOOK_TOKEN
+  if (_wt && !validateWebhookToken(request, _wt)) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  }
   try {
     console.log('[OpenClaw] Webhook recibido:', new Date().toISOString())
     

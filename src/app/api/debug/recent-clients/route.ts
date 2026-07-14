@@ -1,9 +1,13 @@
 // @ts-nocheck
 import { NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/api-auth'
 import { getServiceRoleClient } from '@/lib/supabase'
 
 // GET /api/debug/recent-clients - Ver clientes recientes
 export async function GET(request: Request) {
+  // Endpoint interno: exige sesión (expone/escribe datos reales con service-role).
+  const _auth = await requireAuth()
+  if (_auth.error) return _auth.error
   try {
     const supabase = getServiceRoleClient()
     

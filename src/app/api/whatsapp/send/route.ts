@@ -124,16 +124,32 @@ export async function POST(req: NextRequest) {
 /**
  * PATCH: alternar estado del bot (pausar / reanudar) o cambiar status del thread
  */
+const patchWaSchema = z.object({
+  threadId: z.string().uuid(),
+  bot_active: z.boolean().optional(),
+  status: z.enum(['open', 'closed', 'archived', 'pending']).optional(),
+})
+
 export async function PATCH(req: NextRequest) {
+  // 🔐 Igual que el POST: muta estado de conversaciones reales.
+  const auth = await requireAuth()
+  if (auth.error) return auth.error
+
   try {
-    const { threadId, bot_active, status } = await req.json()
-    if (!threadId) return NextResponse.json({ error: 'threadId requerido' }, { status: 400 })
+    const parsed = patchWaSchema.safeParse(await req.json())
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'payload inválido', details: parsed.error.flatten() }, { status: 400 })
+    }
+    const { threadId, bot_active, status } = parsed.data
 
     const supabase = getServiceRoleClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updates: any = {}
     if (typeof bot_active === 'boolean') updates.bot_active = bot_active
     if (status) updates.status = status
+    if (!Object.keys(updates).length) {
+      return NextResponse.json({ error: 'nada que actualizar' }, { status: 400 })
+    }
 
     await supabase
       .from('chat_threads' as never)

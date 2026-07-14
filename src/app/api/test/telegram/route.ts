@@ -1,9 +1,13 @@
 // @ts-nocheck
 import { NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/api-auth'
 import { getServiceRoleClient } from '@/lib/supabase'
 
 // POST /api/test/telegram - Simular un mensaje de Telegram para testing
 export async function POST(request: Request) {
+  // Endpoint interno: exige sesión (expone/escribe datos reales con service-role).
+  const _auth = await requireAuth()
+  if (_auth.error) return _auth.error
   try {
     const supabase = getServiceRoleClient()
     
@@ -30,7 +34,7 @@ export async function POST(request: Request) {
     console.log('🧪 Enviando mensaje de prueba a webhook de Telegram...')
     
     // Llamar al webhook internamente
-    const webhookResponse = await fetch(`${process.env.VERCEL_URL || 'http://localhost:3000'}/api/webhook/telegram`, {
+    const webhookResponse = await fetch(`${(process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')}/api/webhook/telegram`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -57,6 +61,9 @@ export async function POST(request: Request) {
 
 // GET /api/test/telegram - Verificar configuración
 export async function GET(request: Request) {
+  // Endpoint interno: exige sesión (expone/escribe datos reales con service-role).
+  const _auth = await requireAuth()
+  if (_auth.error) return _auth.error
   try {
     const supabase = getServiceRoleClient()
     
@@ -96,7 +103,7 @@ export async function GET(request: Request) {
         telegram_clients_count: telegramClients?.length || 0,
         recent_telegram_clients: telegramClients || []
       },
-      webhook_url: `${process.env.VERCEL_URL || 'http://localhost:3000'}/api/webhook/telegram`
+      webhook_url: `${(process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')}/api/webhook/telegram`
     })
 
   } catch (error) {

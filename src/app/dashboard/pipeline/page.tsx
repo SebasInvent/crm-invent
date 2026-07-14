@@ -203,8 +203,10 @@ export default function PipelinePage() {
     const deal = sourceStage.deals[source.index]
     if (!deal) return
 
-    // Optimistic cache update — repaint the kanban immediately
-    queryClient.setQueryData<Deal[]>(queryKeys.pipeline.deals, (prev) =>
+    // Optimistic cache update — repaint the kanban immediately.
+    // OJO: la query real usa ['pipeline','deals',productId]; setQueryData exige
+    // match EXACTO del key — con el key corto la tarjeta "rebotaba" a su columna.
+    queryClient.setQueryData<Deal[]>(['pipeline', 'deals', productId], (prev) =>
       prev?.map((d) =>
         d.id === draggableId
           ? { ...d, stage_id: destination.droppableId, probability: destStage.probability }
