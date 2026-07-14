@@ -22,6 +22,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { 
@@ -93,12 +94,19 @@ export default function ApiKeysPage() {
       .map(b => b.toString(16).padStart(2, '0'))
       .join('')
     const fullKey = prefix + randomPart
-    
+
+    // SHA-256: en BD solo vive el hash. La clave completa se muestra UNA vez
+    // (antes se guardaba en texto plano — cualquiera con lectura de BD las veía).
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(fullKey))
+    const keyHash = Array.from(new Uint8Array(digest))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+
     const { data, error } = await supabase
       .from('api_keys')
       .insert({
         name: newKeyName,
-        key_hash: fullKey, // En producción esto debería hashearse
+        key_hash: keyHash,
         key_prefix: fullKey.substring(0, 8),
         scopes: selectedScopes,
         is_active: true,
@@ -108,13 +116,15 @@ export default function ApiKeysPage() {
       } as any)
       .select()
       .single()
-    
+
     if (!error && data) {
       setNewKeyValue(fullKey)
       setShowNewKey(true)
       setNewKeyName('')
       setSelectedScopes(['read:contacts'])
       fetchData()
+    } else if (error) {
+      toast.error(`No se pudo crear la API key: ${error.message}`)
     }
   }
 
@@ -129,6 +139,7 @@ export default function ApiKeysPage() {
 
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text)
+    toast.success('Copiado al portapapeles')
   }
 
   return (

@@ -152,12 +152,11 @@ export default async function LeadsPage({
               Scraper
             </Button>
           </Link>
-          <Link href="/dashboard/leads/import">
-            <Button variant="outline">
-              <Plus className="h-4 w-4 mr-2" />
-              Importar
-            </Button>
-          </Link>
+          {/* Import CSV: sin backend aún — deshabilitado honesto (antes era un 404) */}
+          <Button variant="outline" disabled title="Importación CSV — próximamente">
+            <Plus className="h-4 w-4 mr-2" />
+            Importar
+          </Button>
           <Link href="/dashboard/leads/new">
             <Button>
               <Plus className="h-4 w-4 mr-2" />

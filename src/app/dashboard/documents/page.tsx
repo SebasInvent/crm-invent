@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
 import { formatFileSize } from '@/lib/utils'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -86,9 +87,21 @@ export default function DocumentsPage() {
       .order('created_at', { ascending: false })
     
     if (currentFolder) {
-      // TODO: Join with document_folder_items to filter by folder
+      // Filtrar por carpeta vía la tabla puente document_folder_items
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: items } = await (supabase.from('document_folder_items') as any)
+        .select('document_id')
+        .eq('folder_id', currentFolder)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ids = ((items as any[] | null) || []).map((i) => i.document_id)
+      if (!ids.length) {
+        setDocuments([])
+        setLoading(false)
+        return
+      }
+      query = query.in('id', ids)
     }
-    
+
     const { data } = await query
     
     if (data) {
@@ -139,7 +152,7 @@ export default function DocumentsPage() {
       }
       
       // Create document record
-      const { error: dbError } = await supabase
+      const { data: docRow, error: dbError } = await supabase
         .from('documents')
         .insert({
           name: file.name,
@@ -152,9 +165,17 @@ export default function DocumentsPage() {
           category: 'general',
           visibility: 'internal'
         } as any)
-      
+        .select('id')
+        .single()
+
       if (dbError) {
         console.error('DB error:', dbError)
+        toast.error(`No se pudo registrar ${file.name}`)
+      } else if (currentFolder && docRow) {
+        // Asociar el documento a la carpeta abierta
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase.from('document_folder_items') as any)
+          .insert({ folder_id: currentFolder, document_id: (docRow as { id: string }).id })
       }
     }
     
@@ -184,13 +205,34 @@ export default function DocumentsPage() {
   }
 
   async function deleteDocument(id: string, storagePath: string) {
-    // Delete from storage
-    await supabase.storage.from('documents').remove([storagePath])
-    
-    // Delete from database
-    await supabase.from('documents').delete().eq('id', id)
-    
+    // Destructivo e irreversible: confirmar SIEMPRE.
+    if (!window.confirm('¿Eliminar este documento? Esta acción no se puede deshacer.')) return
+
+    const { error: stErr } = await supabase.storage.from('documents').remove([storagePath])
+    const { error: dbErr } = await supabase.from('documents').delete().eq('id', id)
+    if (stErr || dbErr) {
+      toast.error(`No se pudo eliminar: ${(dbErr || stErr)?.message}`)
+    } else {
+      toast.success('Documento eliminado')
+    }
     fetchDocuments()
+  }
+
+  /** Descarga por URL firmada (mismo signed URL de "Ver"). */
+  function downloadDocument(doc: Document) {
+    if (!doc.url) { toast.error('URL no disponible — recarga la página'); return }
+    const a = document.createElement('a')
+    a.href = doc.url
+    a.download = doc.original_name || doc.name
+    a.target = '_blank'
+    a.click()
+  }
+
+  /** Comparte copiando el enlace firmado (válido 1h). */
+  function shareDocument(doc: Document) {
+    if (!doc.url) { toast.error('URL no disponible — recarga la página'); return }
+    navigator.clipboard.writeText(doc.url)
+    toast.success('Enlace copiado (válido por 1 hora)')
   }
 
   function getFileIcon(fileType?: string) {
@@ -373,11 +415,11 @@ export default function DocumentsPage() {
                             <Eye className="h-4 w-4 mr-2" />
                             Ver
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="text-white">
+                          <DropdownMenuItem className="text-white" onClick={() => downloadDocument(doc)}>
                             <Download className="h-4 w-4 mr-2" />
                             Descargar
                           </DropdownMenuItem>
-                          <DropdownMenuItem className="text-white">
+                          <DropdownMenuItem className="text-white" onClick={() => shareDocument(doc)}>
                             <Share2 className="h-4 w-4 mr-2" />
                             Compartir
                           </DropdownMenuItem>
@@ -418,7 +460,7 @@ export default function DocumentsPage() {
                           <Eye className="h-4 w-4 mr-2" />
                           Ver
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="text-white">
+                        <DropdownMenuItem className="text-white" onClick={() => downloadDocument(doc)}>
                           <Download className="h-4 w-4 mr-2" />
                           Descargar
                         </DropdownMenuItem>

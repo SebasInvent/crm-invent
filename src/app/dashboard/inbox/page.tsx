@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { supabase } from '@/lib/supabase'
+import { toast } from 'sonner'
 import { format, isToday, isYesterday } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -183,25 +184,74 @@ function InboxContent() {
     scrollToBottom()
   }, [messages])
 
-  // ─── Send message mutation. Optimistically appends to the messages cache.
+  // ─── Send message mutation: DESPACHA por el canal real y solo después
+  //     registra en unified_messages con el status verdadero. Antes solo se
+  //     insertaba con status 'sent' sin enviar nada — el operador creía que
+  //     respondió y el cliente jamás recibía el mensaje.
   const sendMessageMutation = useSupabaseMutation<
     { conversation: Conversation; text: string },
     void
   >({
     mutationFn: async ({ conversation, text }) => {
       const channel = channels.find((c) => c.id === conversation.channel_id)
+      const channelType = channel?.type || 'webchat'
+      let status: 'sent' | 'pending' = 'pending'
+
+      if (channelType === 'whatsapp') {
+        // Teléfono del contacto (la vista de conversaciones no lo trae)
+        const { data: contact } = await supabase
+          .from('contacts')
+          .select('phone')
+          .eq('id', conversation.contact_id!)
+          .maybeSingle()
+        const phone = (contact as { phone?: string | null } | null)?.phone
+        if (!phone) throw new Error('El contacto no tiene teléfono para WhatsApp')
+        const res = await fetch('/api/whatsapp/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone, text }),
+        })
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}))
+          throw new Error(j.error || 'No se pudo enviar por WhatsApp')
+        }
+        status = 'sent'
+      } else if (channelType === 'email') {
+        const to = conversation.contact_email
+        if (!to) throw new Error('El contacto no tiene email')
+        const res = await fetch('/api/emails/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to,
+            template: 'custom',
+            subject: conversation.subject || 'Respuesta de Invent Agency',
+            text,
+          }),
+        })
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}))
+          throw new Error(j.error || 'No se pudo enviar el email')
+        }
+        status = 'sent'
+      } else {
+        // Canal sin despachador automático (webchat/telegram/etc.): registrar
+        // como pending y avisar — nunca fingir que se envió.
+        toast.warning(`El canal "${channelType}" aún no tiene despacho automático — mensaje guardado como pendiente`)
+      }
+
       const { error } = await supabase
         .from('unified_messages')
         .insert({
           conversation_id: conversation.id,
           channel_id: conversation.channel_id,
-          channel_type: channel?.type || 'webchat',
+          channel_type: channelType,
           contact_id: conversation.contact_id,
           direction: 'outbound',
           message_type: 'text',
           content: text,
-          status: 'sent',
-          sent_at: new Date().toISOString(),
+          status,
+          sent_at: status === 'sent' ? new Date().toISOString() : null,
         } as any)
       if (error) throw new Error(error.message)
     },
@@ -276,7 +326,13 @@ function InboxContent() {
         <CardHeader className="p-4 pb-2 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-white">Bandeja de Entrada</h2>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-400">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-zinc-400"
+              title="Refrescar"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['inbox'] })}
+            >
               <RefreshCw className="h-4 w-4" />
             </Button>
           </div>
