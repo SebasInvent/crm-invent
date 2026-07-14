@@ -1,9 +1,11 @@
-const CACHE_NAME = 'crm-invent-v1';
+const CACHE_NAME = 'crm-invent-v2';
+// Solo assets que EXISTEN y son estáticos. (El v1 precacheaba PNGs
+// inexistentes → cache.addAll rechazaba → el SW nunca instalaba.)
 const STATIC_ASSETS = [
-  '/',
-  '/dashboard',
+  '/icons/icon-72x72.png',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
+  '/manifest.json',
 ];
 
 // Install event - cache static assets
@@ -30,33 +32,48 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch event - serve from cache or network
+// Fetch: network-first para navegación/HTML, cache-first SOLO para estáticos.
+// Nunca cachear /api ni Supabase (datos autenticados y siempre frescos).
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests
   if (event.request.method !== 'GET') return;
-  
-  // Skip Supabase API requests
-  if (event.request.url.includes('supabase.co')) return;
-  
+
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;       // terceros: no tocar
+  if (url.pathname.startsWith('/api/')) return;          // API autenticada: jamás cachear
+  if (url.pathname.startsWith('/auth/')) return;         // flujos de auth
+
+  // Navegaciones (HTML): red primero, caché como fallback offline
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Estáticos (_next, iconos, imágenes, fuentes): caché primero
+  const isStatic = url.pathname.startsWith('/_next/') ||
+    url.pathname.startsWith('/icons/') ||
+    /\.(png|jpe?g|svg|webp|ico|woff2?|css|js)$/.test(url.pathname);
+  if (!isStatic) return;
+
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      // Return cached version or fetch from network
-      return response || fetch(event.request).then((fetchResponse) => {
-        // Cache successful responses
-        if (fetchResponse.ok && fetchResponse.type === 'basic') {
-          const responseToCache = fetchResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
+    caches.match(event.request).then((cached) =>
+      cached || fetch(event.request).then((res) => {
+        if (res.ok && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         }
-        return fetchResponse;
-      });
-    }).catch(() => {
-      // Return offline fallback for navigation requests
-      if (event.request.mode === 'navigate') {
-        return caches.match('/dashboard');
-      }
-    })
+        return res;
+      })
+    )
   );
 });
 

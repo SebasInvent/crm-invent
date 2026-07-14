@@ -274,6 +274,18 @@ function InboxContent() {
     )
   }
 
+  async function archiveConversation() {
+    if (!selectedConversation) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from('conversations') as any)
+      .update({ status: 'archived' })
+      .eq('id', selectedConversation.id)
+    if (error) { toast.error(`No se pudo archivar: ${error.message}`); return }
+    toast.success('Conversación archivada')
+    queryClient.invalidateQueries({ queryKey: ['inbox'] })
+    router.push('/dashboard/inbox')
+  }
+
   function scrollToBottom() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -506,7 +518,7 @@ function InboxContent() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="bg-zinc-900 border-zinc-800">
-                  <DropdownMenuItem className="text-white">
+                  <DropdownMenuItem className="text-white" onClick={archiveConversation}>
                     <Archive className="h-4 w-4 mr-2" />
                     Archivar
                   </DropdownMenuItem>

@@ -57,21 +57,38 @@ export async function findExistingContact(
     }
   }
 
-  // Buscar por external_id en custom_fields según el source
+  // Buscar por external_id en custom_fields según el source.
+  // Claves CANÓNICAS = las de ContactService.getExternalIdField (antes este
+  // módulo usaba `${source}_id` para whatsapp/email/web y los contactos se
+  // duplicaban según qué módulo los creara).
   if (external_id && source) {
-    const fieldName = source === 'telegram' 
-      ? 'telegram_chat_id' 
-      : source === 'openclaw' 
-        ? 'openclaw_session_id' 
-        : `${source}_id`
-    
+    const CANONICAL: Record<string, string> = {
+      telegram: 'telegram_chat_id',
+      openclaw: 'openclaw_session_id',
+      whatsapp: 'whatsapp_number',
+      email: 'email_campaign_id',
+      web: 'web_session_id',
+    }
+    const fieldName = CANONICAL[source] || `${source}_id`
+
     const { data: byExternal, error: externalError } = await supabase
       .from('contacts')
       .select('*')
       .eq('custom_fields->>' + fieldName, external_id)
       .maybeSingle()
-    
+
     if (byExternal) return byExternal
+
+    // Fallback: clave legacy `${source}_id` de filas creadas antes del fix
+    const legacy = `${source}_id`
+    if (legacy !== fieldName) {
+      const { data: byLegacy } = await supabase
+        .from('contacts')
+        .select('*')
+        .eq('custom_fields->>' + legacy, external_id)
+        .maybeSingle()
+      if (byLegacy) return byLegacy
+    }
     if (externalError && externalError.code !== 'PGRST116') {
       console.error(`[findExistingContact] Error buscando por ${fieldName}:`, externalError)
     }
@@ -111,13 +128,17 @@ export async function createContactFromInteraction(
   // Agregar campos específicos según el source en custom_fields
   const customFields: Record<string, any> = params.metadata || {}
   
-  if (params.source === 'telegram' && params.external_id) {
-    customFields.telegram_chat_id = params.external_id
-    customFields.telegram_username = params.username
-  } else if (params.source === 'openclaw' && params.external_id) {
-    customFields.openclaw_session_id = params.external_id
-  } else if (params.external_id) {
-    customFields[`${params.source}_id`] = params.external_id
+  if (params.external_id) {
+    // Mismas claves canónicas que ContactService.getExternalIdField
+    const CANONICAL: Record<string, string> = {
+      telegram: 'telegram_chat_id',
+      openclaw: 'openclaw_session_id',
+      whatsapp: 'whatsapp_number',
+      email: 'email_campaign_id',
+      web: 'web_session_id',
+    }
+    customFields[CANONICAL[params.source] || `${params.source}_id`] = params.external_id
+    if (params.source === 'telegram') customFields.telegram_username = params.username
   }
 
   if (Object.keys(customFields).length > 0) {

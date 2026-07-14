@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 
@@ -60,8 +60,8 @@ export async function POST(request: Request) {
   const block = rateLimitOrBlock(request, { window: '1m', max: 30, key: 'emails-send' })
   if (block) return block
 
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   let parsed: z.infer<typeof sendSchema>
   try {
@@ -123,7 +123,8 @@ export async function POST(request: Request) {
         from_email: fromAddress,
         status: 'sent',
         sent_at: new Date().toISOString(),
-        sent_by: auth.user.id,
+        sent_by: org.user.id,
+        org_id: org.orgId,
       })
       .select('id')
       .single()

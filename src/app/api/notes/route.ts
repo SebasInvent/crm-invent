@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 
@@ -42,8 +42,8 @@ const bodySchema = z
   )
 
 export async function GET(request: Request) {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   const url = new URL(request.url)
   let parsed: z.infer<typeof querySchema>
@@ -64,6 +64,7 @@ export async function GET(request: Request) {
   let query = supabase
     .from('notes')
     .select('id, body, author_email, author_id, created_at, updated_at, lead_id, contact_id, deal_id')
+    .eq('org_id', org.orgId)
     .order('created_at', { ascending: false })
     .limit(200)
 
@@ -83,8 +84,8 @@ export async function POST(request: Request) {
   const block = rateLimitOrBlock(request, { window: '1m', max: 60, key: 'notes-create' })
   if (block) return block
 
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   let parsed: z.infer<typeof bodySchema>
   try {
@@ -103,8 +104,9 @@ export async function POST(request: Request) {
     lead_id: parsed.lead_id ?? null,
     contact_id: parsed.contact_id ?? null,
     deal_id: parsed.deal_id ?? null,
-    author_id: auth.user.id,
-    author_email: auth.user.email ?? null,
+    author_id: org.user.id,
+    author_email: org.user.email ?? null,
+    org_id: org.orgId,
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
