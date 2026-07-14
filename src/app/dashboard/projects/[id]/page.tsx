@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { ProjectDetailActions } from '@/components/projects/ProjectDetailActions'
 import { notFound } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -8,7 +9,7 @@ import { supabase } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 
-import { ArrowLeft, FolderKanban, Edit, Trash2 } from 'lucide-react'
+import { ArrowLeft, FolderKanban } from 'lucide-react'
 import type { Project, Task, Deliverable } from '@/types/database'
 
 async function getProject(id: string): Promise<Project | null> {
@@ -88,16 +89,15 @@ export default async function ProjectDetailPage({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" className="border-zinc-700 text-zinc-300 hover:bg-zinc-800">
-            <Edit className="h-4 w-4 mr-2" />
-            Editar
-          </Button>
-          <Button variant="destructive" className="bg-red-600 hover:bg-red-700">
-            <Trash2 className="h-4 w-4 mr-2" />
-            Eliminar
-          </Button>
-        </div>
+        <ProjectDetailActions
+          project={{
+            id: project.id,
+            name: project.name,
+            description: project.description,
+            status: project.status,
+            progress: project.progress,
+          }}
+        />
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">

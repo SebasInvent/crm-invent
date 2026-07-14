@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server'
 import { getServiceRoleClient } from '@/lib/supabase'
 import { requireAuth } from '@/lib/api-auth'
+import { contactService } from '@/lib/contact-service'
 
 // POST /api/leads/[id]/convert - Convertir lead a cliente
 export async function POST(
@@ -51,7 +52,31 @@ export async function POST(
     if (clientError) {
       return NextResponse.json({ error: clientError.message }, { status: 500 })
     }
-    
+
+    // Crear/encontrar el CONTACTO (la UI de Contactos 360° lee `contacts`,
+    // no `clients` — sin esto el lead convertido "desaparecía" del CRM).
+    // findOrCreate dedupea por email/teléfono; se enlaza al client creado.
+    let contact = null
+    try {
+      const result = await contactService.findOrCreate({
+        email: lead.email || undefined,
+        phone: lead.phone || undefined,
+        source: 'manual',
+        name: lead.name,
+        company: lead.company || undefined,
+        metadata: {
+          client_id: client.id,
+          converted_from_lead_id: leadId,
+          original_source: lead.source_platform || lead.source || null
+        },
+        updateIfExists: true
+      })
+      contact = result.contact
+    } catch (contactErr) {
+      // No bloquear la conversión si falla el espejo en contacts
+      console.error('[Lead Convert] No se pudo crear el contacto:', contactErr)
+    }
+
     // Actualizar lead como convertido
     await supabase
       .from('leads')
@@ -80,6 +105,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       client,
+      contact,
       project,
       message: 'Lead convertido a cliente exitosamente'
     })

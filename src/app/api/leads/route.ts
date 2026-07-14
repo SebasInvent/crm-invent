@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getServiceRoleClient } from '@/lib/supabase'
-import { requireAuth } from '@/lib/api-auth'
+import { requireOrg } from '@/lib/api-auth'
 
 // ─── Validation schemas ────────────────────────────────────────────────────
 
@@ -42,8 +42,8 @@ const querySchema = z.object({
 // ─── GET — list leads (auth required) ──────────────────────────────────────
 
 export async function GET(request: Request) {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   try {
     const { searchParams } = new URL(request.url)
@@ -62,6 +62,7 @@ export async function GET(request: Request) {
     let query = supabase
       .from('leads')
       .select('*')
+      .eq('org_id', org.orgId)
       .order('lead_score', { ascending: false })
       .limit(limit)
 
@@ -82,8 +83,8 @@ export async function GET(request: Request) {
 // ─── POST — create lead (auth required) ────────────────────────────────────
 
 export async function POST(request: Request) {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   try {
     const body = await request.json()
@@ -100,7 +101,8 @@ export async function POST(request: Request) {
       lead_status: getLeadStatusFromScore(leadScore),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      created_by: auth.user.id,
+      created_by: org.user.id,
+      org_id: org.orgId,
     }
 
     const { data: lead, error } = await supabase
@@ -120,8 +122,8 @@ export async function POST(request: Request) {
 // ─── PUT — update lead (auth required) ─────────────────────────────────────
 
 export async function PUT(request: Request) {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   try {
     const body = await request.json()
@@ -148,6 +150,7 @@ export async function PUT(request: Request) {
       .from('leads')
       .update({ ...updates, updated_at: new Date().toISOString() } as never)
       .eq('id', id)
+      .eq('org_id', org.orgId)
       .select()
       .single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -162,8 +165,8 @@ export async function PUT(request: Request) {
 // ─── DELETE — delete lead (auth required) ──────────────────────────────────
 
 export async function DELETE(request: Request) {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   try {
     const body = await request.json()
@@ -173,7 +176,11 @@ export async function DELETE(request: Request) {
     }
 
     const supabase = getServiceRoleClient()
-    const { error } = await supabase.from('leads').delete().eq('id', parsed.data.id)
+    const { error } = await supabase
+      .from('leads')
+      .delete()
+      .eq('id', parsed.data.id)
+      .eq('org_id', org.orgId)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     return NextResponse.json({ success: true })

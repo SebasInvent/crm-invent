@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 
@@ -30,8 +30,8 @@ const querySchema = z.object({
 })
 
 export async function GET(request: Request) {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   const url = new URL(request.url)
   let parsed: z.infer<typeof querySchema>
@@ -48,7 +48,8 @@ export async function GET(request: Request) {
   const { data, error } = await supabase
     .from('saved_views')
     .select('id, name, filters, is_pinned, created_at, updated_at')
-    .eq('user_id', auth.user.id)
+    .eq('org_id', org.orgId)
+    .eq('user_id', org.user.id)
     .eq('entity', parsed.entity)
     .order('is_pinned', { ascending: false })
     .order('name', { ascending: true })
@@ -61,8 +62,8 @@ export async function POST(request: Request) {
   const block = rateLimitOrBlock(request, { window: '1m', max: 30, key: 'saved-views-create' })
   if (block) return block
 
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   let parsed: z.infer<typeof createSchema>
   try {
@@ -79,11 +80,12 @@ export async function POST(request: Request) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase.from('saved_views') as any)
     .insert({
-      user_id: auth.user.id,
+      user_id: org.user.id,
       entity: parsed.entity,
       name: parsed.name,
       filters: parsed.filters,
       is_pinned: parsed.is_pinned,
+      org_id: org.orgId,
     })
     .select('id, name, filters, is_pinned, created_at, updated_at')
     .single()

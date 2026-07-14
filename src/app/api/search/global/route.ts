@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 
@@ -36,8 +36,8 @@ export async function GET(request: Request) {
   const block = rateLimitOrBlock(request, { window: '1m', max: 90, key: 'search-global' })
   if (block) return block
 
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   const url = new URL(request.url)
   let parsed: z.infer<typeof querySchema>
@@ -63,6 +63,7 @@ export async function GET(request: Request) {
       supabase
         .from('contacts')
         .select('id, first_name, last_name, email, phone, company_name, type')
+        .eq('org_id', org.orgId)
         .or(
           `first_name.ilike.${ilike},last_name.ilike.${ilike},email.ilike.${ilike},phone.ilike.${ilike},company_name.ilike.${ilike}`,
         )
@@ -70,12 +71,15 @@ export async function GET(request: Request) {
       supabase
         .from('leads')
         .select('id, name, email, company, lead_status, lead_score')
+        .eq('org_id', org.orgId)
         .or(`name.ilike.${ilike},email.ilike.${ilike},company.ilike.${ilike}`)
         .order('lead_score', { ascending: false })
         .limit(limit),
       supabase
         .from('deals_full')
         .select('id, name, value, status, contact_first_name, contact_last_name, contact_company')
+        // deals_full arrastra d.org_id desde 024_views_org_id.sql
+        .eq('org_id', org.orgId)
         .or(
           `name.ilike.${ilike},contact_first_name.ilike.${ilike},contact_last_name.ilike.${ilike},contact_company.ilike.${ilike}`,
         )
