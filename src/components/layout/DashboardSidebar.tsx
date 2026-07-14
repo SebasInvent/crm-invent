@@ -25,6 +25,7 @@ import {
   MessageCircle,
   Megaphone,
   Menu,
+  Target,
   X,
 } from 'lucide-react'
 
@@ -32,6 +33,7 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Conversaciones', href: '/dashboard/conversaciones', icon: MessageCircle },
   { name: 'Contactos 360°', href: '/dashboard/contacts', icon: Contact2 },
+  { name: 'Leads', href: '/dashboard/leads', icon: Target },
   { name: 'Pipeline', href: '/dashboard/pipeline', icon: BarChart3 },
   { name: 'Inbox', href: '/dashboard/inbox', icon: Inbox },
   { name: 'Proyectos', href: '/dashboard/projects', icon: FolderKanban },

@@ -1,8 +1,12 @@
 // @ts-nocheck
 import { NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/api-auth'
 
 // POST /api/test/openclaw-webhook - Simular webhook de OpenClaw
 export async function POST(request: Request) {
+  // Endpoint interno: exige sesión (expone/escribe datos reales con service-role).
+  const _auth = await requireAuth()
+  if (_auth.error) return _auth.error
   try {
     const baseUrl = process.env.VERCEL_URL 
       ? `https://${process.env.VERCEL_URL}` 
@@ -73,6 +77,9 @@ export async function POST(request: Request) {
 
 // GET /api/test/openclaw-webhook - Verificar configuración
 export async function GET(request: Request) {
+  // Endpoint interno: exige sesión (expone/escribe datos reales con service-role).
+  const _auth = await requireAuth()
+  if (_auth.error) return _auth.error
   const baseUrl = process.env.VERCEL_URL 
     ? `https://${process.env.VERCEL_URL}` 
     : 'http://localhost:3000'

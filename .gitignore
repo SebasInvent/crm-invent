@@ -42,3 +42,8 @@ Thumbs.db
 .env*.local
 
 .vercel
+
+# build artifacts
+tsconfig.tsbuildinfo
+playwright-report/
+test-results/

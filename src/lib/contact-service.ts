@@ -44,7 +44,20 @@ export interface FindOrCreateResult {
  * desde cualquier fuente (OpenClaw, Email, Telegram, etc.)
  */
 export class ContactService {
-  private supabase = getServiceRoleClient()
+  /**
+   * Cliente perezoso: NO instanciar en el field initializer. El singleton
+   * `contactService` se construye al importar el módulo, y `next build`
+   * importa las routes que lo usan (webhook/email/reply, webhook/openclaw)
+   * durante "collecting page data" — sin NEXT_PUBLIC_SUPABASE_URL en el
+   * entorno de build, un cliente eager revienta el build entero.
+   * Diferido al primer uso real (runtime).
+   */
+  private _supabase: ReturnType<typeof getServiceRoleClient> | null = null
+
+  private get supabase(): ReturnType<typeof getServiceRoleClient> {
+    if (!this._supabase) this._supabase = getServiceRoleClient()
+    return this._supabase
+  }
 
   /**
    * El cliente service-role no tiene tipos generados para estas tablas
@@ -70,9 +83,12 @@ export class ContactService {
 
     // 1. Buscar por email (más confiable)
     if (email && email.trim() !== '') {
+      // limit(1): con duplicados en BD, maybeSingle() sin límite devuelve
+      // error en vez de match y rompe todo el findOrCreate.
       const { data, error } = await this.t('contacts')
         .select('*')
         .ilike('email', email.trim())
+        .limit(1)
         .maybeSingle()
       
       if (data) {
@@ -87,9 +103,14 @@ export class ContactService {
     // 2. Buscar por teléfono
     if (phone && phone.trim() !== '') {
       const cleanPhone = phone.replace(/[^\d]/g, '')
+      // Sanear el valor crudo: coma/paréntesis/punto son sintaxis del filtro
+      // .or() de PostgREST — sin escapar, un teléfono "(301) 555..." inyecta
+      // condiciones o rompe el parser.
+      const safePhone = phone.trim().replace(/[(),."'\\]/g, '')
       const { data, error } = await this.t('contacts')
         .select('*')
-        .or(`phone.ilike.%${phone.trim()}%,phone.ilike.%${cleanPhone}%`)
+        .or(`phone.ilike.%${safePhone}%,phone.ilike.%${cleanPhone}%`)
+        .limit(1)
         .maybeSingle()
       
       if (data) {
