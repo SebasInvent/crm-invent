@@ -32,6 +32,7 @@ const bodySchema = z
       ])
       .optional(),
     next_follow_up_date: z.string().datetime().nullable().optional(),
+    tags: z.array(z.string().max(80)).max(30).optional(),
     notes: z.string().max(2000).optional(),
   })
   .refine(
@@ -57,7 +58,18 @@ export async function PATCH(request: Request) {
     )
   }
 
-  const { id, ...patch } = parsed
+  const { id, next_follow_up_date: nextFollowUpDate, ...directPatch } = parsed
+  const patch = {
+    ...directPatch,
+    ...(nextFollowUpDate !== undefined
+      ? {
+          notes: [
+            directPatch.notes,
+            `[SEGUIMIENTO_N8N] ${nextFollowUpDate ?? 'sin fecha'}`,
+          ].filter(Boolean).join('\n\n').slice(-2000),
+        }
+      : {}),
+  }
   const supabase = getServiceRoleClient()
 
   try {
@@ -65,7 +77,7 @@ export async function PATCH(request: Request) {
     const { data, error } = await (supabase.from('leads') as any)
       .update({ ...patch, updated_at: new Date().toISOString() })
       .eq('id', id)
-      .select('id, name, lead_status, lead_score, next_follow_up_date')
+      .select('id, name, lead_status, lead_score, priority, tags, notes, updated_at')
       .single()
 
     if (error) throw new Error(error.message)
@@ -80,7 +92,7 @@ export async function PATCH(request: Request) {
           ? 'lead_score_change'
           : patch.priority !== undefined
             ? 'lead_priority_change'
-            : patch.next_follow_up_date !== undefined
+            : nextFollowUpDate !== undefined
               ? 'lead_follow_up_set'
               : 'note'
 
@@ -99,7 +111,7 @@ export async function PATCH(request: Request) {
     logAriaAction('leads.update', { id, ...patch }, 'ok')
     return NextResponse.json({
       ok: true,
-      lead: data,
+      lead: { ...data, next_follow_up_date: nextFollowUpDate ?? null },
       message: `Lead actualizado${data?.name ? ': ' + data.name : ''}`,
     })
   } catch (err) {
