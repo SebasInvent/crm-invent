@@ -162,7 +162,7 @@ export async function POST(request: Request) {
             email: b.email ?? null,
             phone: b.phone ?? null,
             company_name: b.company_name ?? null,
-            type: 'prospect',
+            type: 'lead',
             source: 'openclaw',
             product_id: productId,
           })

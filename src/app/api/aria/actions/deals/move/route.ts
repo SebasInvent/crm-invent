@@ -48,30 +48,49 @@ export async function POST(request: Request) {
   const supabase = getServiceRoleClient()
 
   try {
+    const { data: sourceDeal, error: dealLookupError } = await supabase
+      .from('deals')
+      .select('id, pipeline_id')
+      .eq('id', parsed.deal_id)
+      .maybeSingle()
+    if (dealLookupError) throw new Error(dealLookupError.message)
+    if (!sourceDeal) {
+      return NextResponse.json({ error: 'Deal not found' }, { status: 404 })
+    }
+    const sourcePipelineId = (sourceDeal as { pipeline_id: string | null }).pipeline_id
+
     // Resolve the destination stage
     let stage:
-      | { id: string; name: string; default_probability: number }
+      | { id: string; name: string; default_probability: number; pipeline_id: string }
       | null = null
 
     if (parsed.stage_id) {
       const { data } = await supabase
         .from('pipeline_stages')
-        .select('id, name, default_probability')
+        .select('id, name, default_probability, pipeline_id')
         .eq('id', parsed.stage_id)
         .single()
       stage = data as typeof stage
     } else if (parsed.stage_name) {
-      const { data } = await supabase
+      let query = supabase
         .from('pipeline_stages')
-        .select('id, name, default_probability')
+        .select('id, name, default_probability, pipeline_id')
         .ilike('name', `%${parsed.stage_name}%`)
         .eq('is_active', true)
+      if (sourcePipelineId) query = query.eq('pipeline_id', sourcePipelineId)
+      const { data } = await query
         .limit(1)
       stage = (Array.isArray(data) ? data[0] : data) as typeof stage
     }
 
     if (!stage) {
       return NextResponse.json({ error: 'Stage not found' }, { status: 404 })
+    }
+    if (sourcePipelineId && stage.pipeline_id !== sourcePipelineId) {
+      return NextResponse.json(
+        { error: 'Stage does not belong to the deal pipeline' },
+        { status: 409 },
+      )
     }
 
     const probability = parsed.probability ?? stage.default_probability
