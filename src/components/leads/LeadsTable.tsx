@@ -10,7 +10,6 @@ import { toast } from 'sonner'
 import {
   Mail,
   Phone,
-  Calendar,
   ArrowRight,
   Flame,
   Thermometer,
@@ -31,14 +30,11 @@ type Lead = {
   phone: string | null
   company: string | null
   industry: string | null
-  jung_archetype: string | null
+  tags: string[] | null
   lead_score: number
   lead_status: 'hot' | 'warm' | 'cold' | 'dead' | 'converted'
   priority: 'critical' | 'high' | 'medium' | 'low'
-  next_follow_up_date: string | null
 }
-
-type ArchetypeMeta = { label: string; color: string; icon: string }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; Icon: LucideIcon }> = {
   hot: { label: 'Hot', color: 'bg-red-100 text-red-800 border-red-200', Icon: Flame },
@@ -57,7 +53,6 @@ const PRIORITY_BADGES: Record<string, string> = {
 
 interface Props {
   leads: Lead[]
-  archetypeLabels: Record<string, ArchetypeMeta>
 }
 
 /**
@@ -72,7 +67,7 @@ interface Props {
  * route via router.refresh() (the listing is server-rendered, so
  * this re-renders with fresh data).
  */
-export function LeadsTable({ leads, archetypeLabels }: Props) {
+export function LeadsTable({ leads }: Props) {
   const router = useRouter()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [pending, setPending] = useState<string | null>(null) // current action label
@@ -140,18 +135,18 @@ export function LeadsTable({ leads, archetypeLabels }: Props) {
                 />
               </th>
               <th className="text-left py-3 px-4 font-medium">Lead</th>
-              <th className="text-left py-3 px-4 font-medium">Arquetipo</th>
+              <th className="text-left py-3 px-4 font-medium">Producto</th>
               <th className="text-left py-3 px-4 font-medium">Score</th>
               <th className="text-left py-3 px-4 font-medium">Estado</th>
               <th className="text-left py-3 px-4 font-medium">Prioridad</th>
-              <th className="text-left py-3 px-4 font-medium">Próximo Contacto</th>
+              <th className="text-left py-3 px-4 font-medium">Cadencia</th>
               <th className="text-left py-3 px-4 font-medium">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {leads.map((lead) => {
               const status = STATUS_CONFIG[lead.lead_status] ?? STATUS_CONFIG.cold
-              const archetype = lead.jung_archetype ? archetypeLabels[lead.jung_archetype] : null
+              const product = lead.tags?.includes('tickean') ? 'Tickean' : lead.tags?.includes('encore') ? 'Encore' : 'General'
               const isSelected = selected.has(lead.id)
               return (
                 <tr
@@ -182,14 +177,7 @@ export function LeadsTable({ leads, archetypeLabels }: Props) {
                     </div>
                   </td>
                   <td className="py-3 px-4">
-                    {archetype ? (
-                      <Badge className={archetype.color}>
-                        <span className="mr-1">{archetype.icon}</span>
-                        {archetype.label}
-                      </Badge>
-                    ) : (
-                      <span className="text-muted-foreground text-sm">-</span>
-                    )}
+                    <Badge variant="outline">{product}</Badge>
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-2">
@@ -214,14 +202,15 @@ export function LeadsTable({ leads, archetypeLabels }: Props) {
                     </Badge>
                   </td>
                   <td className="py-3 px-4">
-                    {lead.next_follow_up_date ? (
-                      <div className="flex items-center gap-1 text-sm">
-                        <Calendar className="h-4 w-4" />
-                        {new Date(lead.next_follow_up_date).toLocaleDateString('es-CO')}
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground text-sm">-</span>
-                    )}
+                    <span className="text-sm text-muted-foreground">
+                      {lead.lead_status === 'cold'
+                        ? 'Aprobar contacto'
+                        : lead.lead_status === 'warm'
+                          ? 'Seguimiento 48h'
+                          : lead.lead_status === 'hot'
+                            ? 'Hoy (24h)'
+                            : '-'}
+                    </span>
                   </td>
                   <td className="py-3 px-4">
                     <div className="flex gap-1">

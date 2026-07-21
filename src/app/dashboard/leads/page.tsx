@@ -32,16 +32,7 @@ import type { Lead } from '@/types/database'
 // Type assertion para los resultados de Supabase
 interface LeadStats {
   lead_status: Lead['lead_status'];
-  jung_archetype: Lead['jung_archetype'];
-}
-
-const archetypeLabels: Record<string, { label: string; color: string; icon: string }> = {
-  hero_entrepreneur: { label: 'Emprendedor Visionario', color: 'bg-orange-100 text-orange-800', icon: '🚀' },
-  sage_conservative: { label: 'Empresario Conservador', color: 'bg-blue-100 text-blue-800', icon: '🛡️' },
-  caregiver_stressed: { label: 'Marketing Manager', color: 'bg-purple-100 text-purple-800', icon: '💆' },
-  artist_specialist: { label: 'Especialista Independiente', color: 'bg-pink-100 text-pink-800', icon: '🎨' },
-  ruler_executive: { label: 'Ejecutivo Results-Driven', color: 'bg-emerald-100 text-emerald-800', icon: '👑' },
-  explorer_merchant: { label: 'Comerciante Digital', color: 'bg-cyan-100 text-cyan-800', icon: '🛍️' }
+  priority: Lead['priority'];
 }
 
 const statusConfig = {
@@ -61,7 +52,7 @@ const priorityConfig = {
 
 interface LeadFilters {
   status?: string
-  archetype?: string
+  priority?: string
   q?: string
 }
 
@@ -73,7 +64,7 @@ async function getLeads(filters: LeadFilters = {}): Promise<Lead[]> {
     .limit(50)
 
   if (filters.status) query = query.eq('lead_status', filters.status)
-  if (filters.archetype) query = query.eq('jung_archetype', filters.archetype)
+  if (filters.priority) query = query.eq('priority', filters.priority)
   if (filters.q) {
     // Search across name, email, company (tablename ilike or)
     const term = filters.q.replace(/[%]/g, '')
@@ -91,7 +82,7 @@ async function getLeads(filters: LeadFilters = {}): Promise<Lead[]> {
 async function getLeadStats() {
   const { data: stats } = await supabase
     .from('leads')
-    .select('lead_status, jung_archetype')
+    .select('lead_status, priority')
 
   const leadsData = (stats as LeadStats[]) || []
   
@@ -101,14 +92,8 @@ async function getLeadStats() {
     warm: leadsData.filter((l: LeadStats) => l.lead_status === 'warm').length,
     cold: leadsData.filter((l: LeadStats) => l.lead_status === 'cold').length,
     converted: leadsData.filter((l: LeadStats) => l.lead_status === 'converted').length,
-    byArchetype: {} as Record<string, number>
+    highPriority: leadsData.filter((l: LeadStats) => l.priority === 'high' || l.priority === 'critical').length,
   }
-
-  leadsData.forEach((lead: LeadStats) => {
-    if (lead.jung_archetype) {
-      totals.byArchetype[lead.jung_archetype] = (totals.byArchetype[lead.jung_archetype] || 0) + 1
-    }
-  })
 
   return totals
 }
@@ -124,7 +109,7 @@ export default async function LeadsPage({
 
   const filters = {
     status: pickStr(sp.status),
-    archetype: pickStr(sp.archetype),
+    priority: pickStr(sp.priority),
     q: pickStr(sp.q),
   }
 
@@ -141,11 +126,11 @@ export default async function LeadsPage({
             Leads & Prospección
           </h1>
           <p className="text-muted-foreground mt-1">
-            Gestiona prospectos basados en la metodología Jung
+            Prospectos organizados por producto, prioridad y estado de contacto
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <SavedViews entity="leads" filterKeys={['status', 'archetype', 'q']} />
+          <SavedViews entity="leads" filterKeys={['status', 'priority', 'q']} />
           <Link href="/dashboard/leads/scrape">
             <Button variant="outline">
               <Globe className="h-4 w-4 mr-2" />
@@ -203,20 +188,20 @@ export default async function LeadsPage({
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Con Arquetipo</CardTitle>
-            <Brain className="h-4 w-4 text-purple-500" />
+            <CardTitle className="text-sm font-medium">Prioridad alta</CardTitle>
+            <Brain className="h-4 w-4 text-orange-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-600">
-              {Object.values(stats.byArchetype).reduce((a, b) => a + b, 0)}
+            <div className="text-2xl font-bold text-orange-600">
+              {stats.highPriority}
             </div>
-            <p className="text-xs text-muted-foreground">Perfiles Jung identificados</p>
+            <p className="text-xs text-muted-foreground">Revisión comercial primero</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Filters & Search — wired to URL params via client component */}
-      <LeadFilters archetypeLabels={archetypeLabels} />
+      <LeadFilters />
 
       {/* Leads Table */}
       <Card>
@@ -250,30 +235,11 @@ export default async function LeadsPage({
               }
             />
           ) : (
-            <LeadsTable leads={leads as any} archetypeLabels={archetypeLabels} />
+            <LeadsTable leads={leads as any} />
           )}
         </CardContent>
       </Card>
 
-      {/* Arquetypes Legend */}
-      <Card className="bg-muted/50">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Brain className="h-4 w-4" />
-            Guía de Arquetipos Jung
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
-            {Object.entries(archetypeLabels).map(([key, { label, icon }]) => (
-              <div key={key} className="flex items-center gap-1">
-                <span>{icon}</span>
-                <span className="text-muted-foreground">{label}</span>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

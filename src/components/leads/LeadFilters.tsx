@@ -4,10 +4,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 
-interface ArchetypeMap {
-  [key: string]: { label: string; color: string; icon: string }
-}
-
 /**
  * Client-side filter controls for the leads list.
  * Updates URL query params; the server component re-renders with the filtered query.
@@ -17,11 +13,11 @@ interface ArchetypeMap {
  *   - Back-button works
  *   - Server can keep doing the DB filter (no need to re-fetch in JS)
  */
-export function LeadFilters({ archetypeLabels }: { archetypeLabels: ArchetypeMap }) {
+export function LeadFilters() {
   const router = useRouter()
   const params = useSearchParams()
   const currentStatus = params.get('status') ?? ''
-  const currentArchetype = params.get('archetype') ?? ''
+  const currentPriority = params.get('priority') ?? ''
   const currentQ = params.get('q') ?? ''
 
   const updateParam = (key: string, value: string) => {
@@ -63,16 +59,15 @@ export function LeadFilters({ archetypeLabels }: { archetypeLabels: ArchetypeMap
           <option value="converted">Convertidos</option>
         </select>
         <select
-          value={currentArchetype}
-          onChange={(e) => updateParam('archetype', e.target.value)}
+          value={currentPriority}
+          onChange={(e) => updateParam('priority', e.target.value)}
           className="px-3 py-2 border rounded-md text-sm bg-background"
         >
-          <option value="">Todos los arquetipos</option>
-          {Object.entries(archetypeLabels).map(([key, { label }]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
+          <option value="">Todas las prioridades</option>
+          <option value="critical">Crítica</option>
+          <option value="high">Alta</option>
+          <option value="medium">Media</option>
+          <option value="low">Baja</option>
         </select>
       </div>
     </div>
