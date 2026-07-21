@@ -58,8 +58,8 @@ export async function GET(request: Request) {
     if (parsed.entity === 'lead' || parsed.entity === 'all') {
       const { data } = await supabase
         .from('leads')
-        .select('id, name, email, phone, company, lead_status, lead_score, jung_archetype, next_follow_up_date')
-        .or(`name.ilike.${ilike},email.ilike.${ilike},company.ilike.${ilike}`)
+        .select('id, name, email, phone, company, lead_status, lead_score, priority, product_id, tags, updated_at')
+        .or(`name.ilike.${ilike},email.ilike.${ilike},phone.ilike.${ilike},company.ilike.${ilike}`)
         .order('lead_score', { ascending: false })
         .limit(parsed.limit)
       results.leads = data || []

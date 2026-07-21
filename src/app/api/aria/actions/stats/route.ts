@@ -22,13 +22,13 @@ export async function GET(request: Request) {
   try {
     // Run all counts in parallel — none depend on each other
     const [leadsRes, dealsRes, contactsRes, threadsRes] = await Promise.all([
-      supabase.from('leads').select('lead_status, lead_score, next_follow_up_date'),
+      supabase.from('leads').select('lead_status, lead_score, updated_at'),
       supabase.from('deals_full').select('value, status, stage_id, probability'),
       supabase.from('contacts').select('type'),
       supabase.from('chat_threads').select('status, last_message_at').limit(500),
     ])
 
-    const leads = (leadsRes.data || []) as Array<{ lead_status: string; lead_score: number; next_follow_up_date: string | null }>
+    const leads = (leadsRes.data || []) as Array<{ lead_status: string; lead_score: number; updated_at: string }>
     const deals = (dealsRes.data || []) as Array<{ value: number; status: string; stage_id: string; probability: number }>
     const contacts = (contactsRes.data || []) as Array<{ type: string }>
     const threads = (threadsRes.data || []) as Array<{ status: string; last_message_at: string }>
@@ -39,13 +39,15 @@ export async function GET(request: Request) {
       return acc
     }, {})
 
-    // Leads needing follow-up in next 7 days
+    // Leads due now or during the next 7 days. Production cadence is
+    // derived from updated_at until the schema migration adds a dedicated date.
     const now = Date.now()
     const sevenDays = 7 * 24 * 60 * 60 * 1000
     const followUpsThisWeek = leads.filter((l) => {
-      if (!l.next_follow_up_date) return false
-      const t = new Date(l.next_follow_up_date).getTime()
-      return t >= now && t <= now + sevenDays
+      if (l.lead_status === 'dead' || l.lead_status === 'converted') return false
+      const cadenceHours = l.lead_status === 'cold' ? 0 : l.lead_status === 'hot' ? 24 : 48
+      const dueAt = new Date(l.updated_at).getTime() + cadenceHours * 60 * 60 * 1000
+      return Number.isFinite(dueAt) && dueAt <= now + sevenDays
     }).length
 
     // Deals open + open value + weighted value
