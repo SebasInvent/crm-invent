@@ -13,6 +13,7 @@ const querySchema = z.object({
 const bodySchema = querySchema.extend({ commit: z.boolean().default(false) })
 const machineSource = /(maquina|machine|nightlife|sourcing|bright|scrap|gmaps|openclaw)/i
 const testRecord = /(prueba|test|smoke|debug|borrar)/i
+const nightlifeEvidence = /(nightlife|bar\b|cafe\b|club\b|discoteca|rooftop|pub\b|lounge|rumba|salsa|techno|rave|festival|evento|promotor|venue|teatro|concierto|boleter|ticket|dj\b|musica|cervecer|restaurante|gastro)/i
 
 type Product = { id: string; slug: string; name: string }
 type Contact = {
@@ -117,10 +118,20 @@ function buildCandidates(inventory: Awaited<ReturnType<typeof loadInventory>>, p
     const product = productId ? productById.get(productId) : undefined
     const sourceIsMachine = machineSource.test(String(contact.source ?? '')) || machineDeals.length > 0
     const label = [contact.company_name, contact.first_name, contact.last_name].filter(Boolean).join(' ')
+    const evidence = [
+      label,
+      contact.industry,
+      contact.notes,
+      JSON.stringify(contact.tags ?? []),
+      JSON.stringify(contact.source_details ?? {}),
+      ...machineDeals.flatMap((deal) => [deal.name, deal.description]),
+    ].filter(Boolean).join(' ')
     const excludedReason = !product || !['tickean', 'encore'].includes(product.slug)
       ? 'sin_producto_tickean_encore'
       : !sourceIsMachine
         ? 'sin_fuente_n8n_brightdata'
+        : !nightlifeEvidence.test(evidence)
+          ? 'sin_evidencia_nightlife_eventos'
         : testRecord.test(label)
           ? 'registro_prueba'
           : contact.status === 'blocked' || contact.status === 'archived'
