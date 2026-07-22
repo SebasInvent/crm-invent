@@ -15,6 +15,7 @@ export type WaMessage = {
   direction: 'inbound' | 'outbound'
   sender: 'customer' | 'bot' | 'human'
   content: string
+  metadata?: { delivery_status?: string } | null
   created_at: string
 }
 
@@ -230,7 +231,7 @@ export function ContactConversation({
             description={
               readOnly
                 ? `Aún no hay mensajes de WhatsApp con ${contactName || 'este contacto'}.`
-                : `Aún no hay mensajes de WhatsApp con ${contactName || 'este contacto'}. Escribe abajo para iniciar.`
+                : `Aún no se ha registrado ningún mensaje enviado o recibido con ${contactName || 'este contacto'}. La conversación aparecerá aquí desde el primer envío o respuesta.`
             }
           />
         ) : (
@@ -273,6 +274,14 @@ function Bubble({ m }: { m: WaMessage }) {
   const isOutbound = m.direction === 'outbound'
   const isHuman = m.sender === 'human'
   const isBot = m.sender === 'bot'
+  const deliveryLabel: Record<string, string> = {
+    accepted: 'Aceptado por Meta',
+    sent: 'Enviado',
+    delivered: 'Entregado',
+    read: 'Leído',
+    failed: 'Falló',
+  }
+  const deliveryStatus = m.metadata?.delivery_status
   return (
     <div className={cn('flex', isOutbound ? 'justify-end' : 'justify-start')}>
       <div className="max-w-[78%]">
@@ -302,6 +311,7 @@ function Bubble({ m }: { m: WaMessage }) {
               hour: '2-digit',
               minute: '2-digit',
             })}
+            {isOutbound && deliveryStatus ? ` · ${deliveryLabel[deliveryStatus] || deliveryStatus}` : ''}
           </span>
         </div>
       </div>

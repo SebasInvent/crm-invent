@@ -33,7 +33,8 @@ import {
   TrendingUp,
   MoreHorizontal,
   User,
-  Calendar
+  Calendar,
+  MessageCircle,
 } from 'lucide-react'
 import type { Contact, Deal, ActivityLog } from '@/types/crm-core'
 
@@ -353,6 +354,11 @@ export default function ContactsPage() {
                       Asignado a: {contact.assigned_to_name}
                     </div>
                   )}
+
+                  <div className="ml-4 hidden items-center gap-1.5 text-xs text-emerald-400 lg:flex">
+                    <MessageCircle className="h-4 w-4" />
+                    Abrir conversación
+                  </div>
                 </Link>
               ))}
             </div>

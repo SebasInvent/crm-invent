@@ -79,7 +79,8 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
   if (!contact) notFound()
 
   const fullName = [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim()
-  const { thread, messages } = await getWhatsappConversation(contact.phone)
+  const whatsappPhone = contact.phone || contact.mobile || null
+  const { thread, messages } = await getWhatsappConversation(whatsappPhone)
 
   return (
     <div className="space-y-6">
@@ -122,13 +123,13 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
                   <span className="truncate">{contact.email}</span>
                 </a>
               )}
-              {contact.phone && (
+              {whatsappPhone && (
                 <a
-                  href={`tel:${contact.phone}`}
+                  href={`tel:${whatsappPhone}`}
                   className="flex items-center gap-2 text-zinc-300 hover:text-white"
                 >
                   <Phone className="h-3.5 w-3.5 text-zinc-500" />
-                  <span>{contact.phone}</span>
+                  <span>{whatsappPhone}</span>
                 </a>
               )}
               {contact.company_name && (
@@ -241,7 +242,7 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
               WhatsApp
             </h2>
             <ContactConversation
-              contactPhone={contact.phone}
+              contactPhone={whatsappPhone}
               contactName={fullName}
               initialThread={thread}
               initialMessages={messages}

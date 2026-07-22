@@ -13,6 +13,8 @@ const eventSchema = z.object({
   lead_id: z.string().uuid().optional(),
   contact_name: z.string().min(1).max(160).optional(),
   bot_type: z.string().min(1).max(60).default('tickean'),
+  thread_status: z.enum(['active', 'cold']).optional(),
+  delivery_status: z.enum(['accepted', 'sent', 'delivered', 'read', 'failed']).optional(),
 })
 
 const normalizePhone = (value: unknown) => {
@@ -124,9 +126,9 @@ export async function POST(request: Request) {
       lead_id: thread?.lead_id ?? leadId,
       contact_name: thread?.contact_name ?? contactName,
       status:
-        parsed.direction === 'inbound' && (!thread || ['cold', 'pending'].includes(thread.status))
+        parsed.thread_status ?? (parsed.direction === 'inbound' && (!thread || ['cold', 'pending'].includes(thread.status))
           ? 'active'
-          : (thread?.status ?? 'active'),
+          : (thread?.status ?? (parsed.direction === 'outbound' ? 'cold' : 'active'))),
     }
 
     if (thread) {
@@ -163,6 +165,7 @@ export async function POST(request: Request) {
         direction: parsed.direction,
         sender: parsed.sender,
         content: parsed.content,
+        metadata: parsed.delivery_status ? { delivery_status: parsed.delivery_status } : {},
         created_at: occurredAt,
         org_id: thread.org_id ?? orgId,
       } as never)
@@ -175,6 +178,7 @@ export async function POST(request: Request) {
       sender: parsed.sender,
       bot_type: parsed.bot_type,
       has_lead: Boolean(thread.lead_id),
+      delivery_status: parsed.delivery_status ?? null,
     }, 'ok')
 
     return NextResponse.json({
@@ -184,6 +188,7 @@ export async function POST(request: Request) {
       lead_id: thread.lead_id,
       bot_active: thread.bot_active,
       status: thread.status,
+      delivery_status: parsed.delivery_status ?? null,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown'
