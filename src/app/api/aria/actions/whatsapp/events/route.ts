@@ -23,6 +23,57 @@ const normalizePhone = (value: unknown) => {
   return digits
 }
 
+export async function GET(request: Request) {
+  const block = rateLimitOrBlock(request, {
+    window: '1m',
+    max: 120,
+    key: 'aria-whatsapp-events-read',
+  })
+  if (block) return block
+
+  const auth = requireAriaAuth(request)
+  if (auth.error) return auth.error
+
+  const url = new URL(request.url)
+  const phone = normalizePhone(url.searchParams.get('phone'))
+  const leadId = url.searchParams.get('lead_id')
+  if (!phone && !leadId) {
+    return NextResponse.json({ error: 'phone or lead_id is required' }, { status: 400 })
+  }
+
+  const supabase = getServiceRoleClient()
+  try {
+    let threadQuery = supabase
+      .from('chat_threads')
+      .select('id, phone, contact_name, bot_type, bot_active, status, lead_id, last_message_at, last_message_preview')
+      .order('last_message_at', { ascending: false })
+      .limit(1)
+    threadQuery = leadId
+      ? threadQuery.eq('lead_id', leadId)
+      : threadQuery.eq('phone', phone)
+
+    const { data: threads, error: threadError } = await threadQuery
+    if (threadError) throw new Error(threadError.message)
+    const thread = (threads ?? [])[0] as { id?: string } | undefined
+    if (!thread?.id) return NextResponse.json({ ok: true, thread: null, messages: [] })
+
+    const { data: messages, error: messageError } = await supabase
+      .from('chat_messages')
+      .select('id, thread_id, phone, direction, sender, content, metadata, created_at')
+      .eq('thread_id', thread.id)
+      .order('created_at', { ascending: true })
+      .limit(500)
+    if (messageError) throw new Error(messageError.message)
+
+    return NextResponse.json({ ok: true, thread, messages: messages ?? [] })
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'WhatsApp conversation lookup failed', details: error instanceof Error ? error.message : 'unknown' },
+      { status: 500 },
+    )
+  }
+}
+
 export async function POST(request: Request) {
   const block = rateLimitOrBlock(request, {
     window: '1m',
