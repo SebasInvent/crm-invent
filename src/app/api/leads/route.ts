@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getServiceRoleClient } from '@/lib/supabase'
 import { requireOrg } from '@/lib/api-auth'
+import { notifyQualifiedLead } from '@/lib/lead-qualification'
 
 // ─── Validation schemas ────────────────────────────────────────────────────
 
@@ -27,7 +28,7 @@ const leadCreateSchema = z.object({
 const leadUpdateSchema = leadCreateSchema.partial().extend({
   id: z.string().uuid(),
   lead_score: z.number().int().min(0).max(100).optional(),
-  lead_status: z.enum(['new', 'hot', 'warm', 'cold', 'qualified', 'converted', 'lost']).optional(),
+  lead_status: z.enum(['new', 'hot', 'warm', 'cold', 'qualified', 'dead', 'converted', 'lost']).optional(),
 })
 
 const leadDeleteSchema = z.object({ id: z.string().uuid() })
@@ -135,6 +136,15 @@ export async function PUT(request: Request) {
     const { id, ...updates } = parsed.data
     const supabase = getServiceRoleClient()
 
+    const { data: currentLead, error: currentError } = await supabase
+      .from('leads')
+      .select('id, name, phone, company, location, lead_score, lead_status, tags, notes')
+      .eq('id', id)
+      .eq('org_id', org.orgId)
+      .maybeSingle()
+    if (currentError) return NextResponse.json({ error: currentError.message }, { status: 500 })
+    if (!currentLead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+
     if (
       updates.budget_level !== undefined ||
       updates.authority_level !== undefined ||
@@ -155,7 +165,11 @@ export async function PUT(request: Request) {
       .single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    return NextResponse.json({ lead })
+    const qualification = (lead as any)?.lead_status === 'qualified'
+      ? await notifyQualifiedLead(supabase, lead as any, 'control')
+      : null
+
+    return NextResponse.json({ lead, qualification })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'unknown error'
     return NextResponse.json({ error: msg }, { status: 500 })

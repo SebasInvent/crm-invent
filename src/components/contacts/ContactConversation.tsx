@@ -42,11 +42,13 @@ export function ContactConversation({
   contactName,
   initialThread,
   initialMessages,
+  readOnly = false,
 }: {
   contactPhone: string | null
   contactName: string | null
   initialThread: WaThread
   initialMessages: WaMessage[]
+  readOnly?: boolean
 }) {
   const digits = digitsOf(contactPhone || '')
   const match = digits.length >= 10 ? digits.slice(-10) : digits
@@ -225,7 +227,11 @@ export function ContactConversation({
           <EmptyState
             icon={MessageCircle}
             title="Sin conversación todavía"
-            description={`Aún no hay mensajes de WhatsApp con ${contactName || 'este contacto'}. Escribe abajo para iniciar.`}
+            description={
+              readOnly
+                ? `Aún no hay mensajes de WhatsApp con ${contactName || 'este contacto'}.`
+                : `Aún no hay mensajes de WhatsApp con ${contactName || 'este contacto'}. Escribe abajo para iniciar.`
+            }
           />
         ) : (
           messages.map((m) => <Bubble key={m.id} m={m} />)
@@ -233,31 +239,32 @@ export function ContactConversation({
         <div ref={endRef} />
       </div>
 
-      {/* Composer */}
-      <div className="border-t border-zinc-900 p-3">
-        <div className="flex items-end gap-2 rounded-xl border border-zinc-800 bg-black p-2 transition-colors focus-within:border-zinc-700">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                send()
-              }
-            }}
-            placeholder="Escribir mensaje de WhatsApp..."
-            rows={1}
-            className="max-h-28 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none"
-          />
-          <button
-            onClick={send}
-            disabled={!draft.trim() || sending}
-            className="rounded-lg bg-emerald-500 p-2 text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-30"
-          >
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </button>
+      {!readOnly && (
+        <div className="border-t border-zinc-900 p-3">
+          <div className="flex items-end gap-2 rounded-xl border border-zinc-800 bg-black p-2 transition-colors focus-within:border-zinc-700">
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  send()
+                }
+              }}
+              placeholder="Escribir mensaje de WhatsApp..."
+              rows={1}
+              className="max-h-28 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none"
+            />
+            <button
+              onClick={send}
+              disabled={!draft.trim() || sending}
+              className="rounded-lg bg-emerald-500 p-2 text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

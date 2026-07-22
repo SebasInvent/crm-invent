@@ -164,9 +164,16 @@ export function LeadEditCard({ leadId, initial }: Props) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-zinc-900 border-zinc-800">
-                {['hot', 'warm', 'cold', 'dead', 'converted'].map((t) => (
-                  <SelectItem key={t} value={t} className="text-white">
-                    {t}
+                {[
+                  ['hot', 'Hot'],
+                  ['warm', 'Warm'],
+                  ['cold', 'Cold'],
+                  ['qualified', 'Calificado'],
+                  ['dead', 'Descartado'],
+                  ['converted', 'Cliente'],
+                ].map(([value, label]) => (
+                  <SelectItem key={value} value={value} className="text-white">
+                    {label}
                   </SelectItem>
                 ))}
               </SelectContent>

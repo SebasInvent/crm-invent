@@ -67,14 +67,17 @@ export async function GET(request: Request) {
 
   try {
     // ─── 1. activity_logs (canonical CRM events)
-    if (parsed.contact_id) {
-      const { data } = await supabase
+    if (parsed.contact_id || parsed.lead_id) {
+      let activityQuery = supabase
         .from('activity_logs')
         .select('id, activity_type, title, description, metadata, created_at')
         .eq('org_id', org.orgId)
-        .eq('contact_id', parsed.contact_id)
         .order('created_at', { ascending: false })
         .limit(parsed.limit)
+      activityQuery = parsed.contact_id
+        ? activityQuery.eq('contact_id', parsed.contact_id)
+        : activityQuery.eq('lead_id', parsed.lead_id!)
+      const { data } = await activityQuery
       ;(data || []).forEach((row: any) => {
         events.push({
           id: row.id,

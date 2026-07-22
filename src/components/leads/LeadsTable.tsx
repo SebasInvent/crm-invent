@@ -32,7 +32,7 @@ type Lead = {
   industry: string | null
   tags: string[] | null
   lead_score: number
-  lead_status: 'hot' | 'warm' | 'cold' | 'dead' | 'converted'
+  lead_status: 'hot' | 'warm' | 'cold' | 'qualified' | 'dead' | 'converted'
   priority: 'critical' | 'high' | 'medium' | 'low'
 }
 
@@ -40,6 +40,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; Icon: Lucide
   hot: { label: 'Hot', color: 'bg-red-100 text-red-800 border-red-200', Icon: Flame },
   warm: { label: 'Warm', color: 'bg-yellow-100 text-yellow-800 border-yellow-200', Icon: Thermometer },
   cold: { label: 'Cold', color: 'bg-blue-100 text-blue-800 border-blue-200', Icon: Snowflake },
+  qualified: { label: 'Calificado', color: 'bg-orange-100 text-orange-800 border-orange-200', Icon: CheckCircle },
   dead: { label: 'Dead', color: 'bg-gray-100 text-gray-800 border-gray-200', Icon: Skull },
   converted: { label: 'Cliente', color: 'bg-green-100 text-green-800 border-green-200', Icon: CheckCircle },
 }
@@ -209,6 +210,8 @@ export function LeadsTable({ leads }: Props) {
                           ? 'Seguimiento 48h'
                           : lead.lead_status === 'hot'
                             ? 'Hoy (24h)'
+                            : lead.lead_status === 'qualified'
+                              ? 'Handoff humano'
                             : '-'}
                     </span>
                   </td>

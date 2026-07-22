@@ -4,6 +4,7 @@ import { requireAriaAuth, logAriaAction } from '@/lib/aria-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 import { recordActivity } from '@/lib/activity-log'
+import { notifyQualifiedLead } from '@/lib/lead-qualification'
 
 const bodySchema = z.object({
   name: z.string().min(1).max(200),
@@ -11,7 +12,7 @@ const bodySchema = z.object({
   phone: z.string().max(50).optional().nullable(),
   company: z.string().max(200).optional().nullable(),
   industry: z.string().max(100).optional().nullable(),
-  lead_status: z.enum(['hot', 'warm', 'cold', 'dead', 'converted']).optional().default('warm'),
+  lead_status: z.enum(['hot', 'warm', 'cold', 'qualified', 'dead', 'converted']).optional().default('warm'),
   lead_score: z.number().int().min(0).max(100).optional().default(50),
   priority: z.enum(['critical', 'high', 'medium', 'low']).optional().default('medium'),
   product_slug: z.string().max(80).optional(),
@@ -35,7 +36,7 @@ const bodySchema = z.object({
 })
 
 const priorityRank = { low: 0, medium: 1, high: 2, critical: 3 } as const
-const statusRank = { cold: 0, warm: 1, hot: 2, dead: -1, converted: 3 } as const
+const statusRank = { cold: 0, warm: 1, hot: 2, qualified: 3, dead: -1, converted: 4 } as const
 
 function metadataNote(parsed: z.infer<typeof bodySchema>) {
   const metadata = {
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
       name: string
       email: string | null
       phone: string | null
-      lead_status: 'hot' | 'warm' | 'cold' | 'dead' | 'converted'
+      lead_status: 'hot' | 'warm' | 'cold' | 'qualified' | 'dead' | 'converted'
       lead_score: number | null
       priority: 'critical' | 'high' | 'medium' | 'low' | null
       notes: string | null
@@ -153,7 +154,7 @@ export async function POST(request: Request) {
       const { data, error } = await (supabase.from('leads') as any)
         .update(update)
         .eq('id', existing.id)
-        .select('id, name, email, phone, lead_status, lead_score, priority, product_id, tags, updated_at')
+        .select('id, name, email, phone, company, location, lead_status, lead_score, priority, product_id, tags, notes, updated_at')
         .single()
       if (error) throw new Error(error.message)
 
@@ -164,12 +165,16 @@ export async function POST(request: Request) {
         description: parsed.notes ?? null,
         metadata: { source: 'aria', deduplicated: true, product_slug: parsed.product_slug ?? null },
       })
+      const qualification = data?.lead_status === 'qualified'
+        ? await notifyQualifiedLead(supabase, data, 'agent')
+        : null
       logAriaAction('leads.create', { ...parsed, deduplicated_id: existing.id }, 'ok')
       return NextResponse.json({
         ok: true,
         created: false,
         deduplicated: true,
         lead: { ...data, next_follow_up_date: parsed.next_follow_up_date ?? null },
+        qualification,
         message: `Lead existente enriquecido: ${data?.name ?? parsed.name}`,
       })
     }
@@ -193,7 +198,7 @@ export async function POST(request: Request) {
     }
     const { data, error } = await (supabase.from('leads') as any)
       .insert(insertPayload)
-      .select('id, name, email, phone, lead_status, lead_score, priority, product_id, tags, created_at, updated_at')
+      .select('id, name, email, phone, company, location, lead_status, lead_score, priority, product_id, tags, notes, created_at, updated_at')
       .single()
     if (error) throw new Error(error.message)
 
@@ -206,12 +211,16 @@ export async function POST(request: Request) {
         metadata: { source: 'aria', status: parsed.lead_status, product_slug: parsed.product_slug ?? null },
       })
     }
+    const qualification = data?.lead_status === 'qualified'
+      ? await notifyQualifiedLead(supabase, data, 'agent')
+      : null
     logAriaAction('leads.create', parsed, 'ok')
     return NextResponse.json({
       ok: true,
       created: true,
       deduplicated: false,
       lead: { ...data, next_follow_up_date: parsed.next_follow_up_date ?? null },
+      qualification,
       message: `Lead creado: ${parsed.name} (${parsed.lead_status})`,
     })
   } catch (err) {

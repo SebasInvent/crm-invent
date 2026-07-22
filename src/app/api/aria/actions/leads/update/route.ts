@@ -4,6 +4,7 @@ import { requireAriaAuth, logAriaAction } from '@/lib/aria-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 import { recordActivity, type ActivityType } from '@/lib/activity-log'
+import { notifyQualifiedLead } from '@/lib/lead-qualification'
 
 /**
  * PATCH /api/aria/actions/leads/update
@@ -18,7 +19,7 @@ import { recordActivity, type ActivityType } from '@/lib/activity-log'
 const bodySchema = z
   .object({
     id: z.string().uuid(),
-    lead_status: z.enum(['hot', 'warm', 'cold', 'dead', 'converted']).optional(),
+    lead_status: z.enum(['hot', 'warm', 'cold', 'qualified', 'dead', 'converted']).optional(),
     lead_score: z.number().int().min(0).max(100).optional(),
     priority: z.enum(['critical', 'high', 'medium', 'low']).optional(),
     jung_archetype: z
@@ -65,7 +66,7 @@ export async function PATCH(request: Request) {
   try {
     const { data: current, error: currentError } = await (supabase
       .from('leads') as any)
-      .select('notes, tags')
+      .select('id, name, phone, company, location, lead_status, lead_score, notes, tags')
       .eq('id', id)
       .maybeSingle()
     if (currentError) throw new Error(currentError.message)
@@ -88,7 +89,7 @@ export async function PATCH(request: Request) {
     const { data, error } = await (supabase.from('leads') as any)
       .update({ ...patch, updated_at: new Date().toISOString() })
       .eq('id', id)
-      .select('id, name, lead_status, lead_score, priority, tags, notes, updated_at')
+      .select('id, name, phone, company, location, lead_status, lead_score, priority, tags, notes, updated_at')
       .single()
 
     if (error) throw new Error(error.message)
@@ -119,10 +120,15 @@ export async function PATCH(request: Request) {
       metadata: { source: 'aria', patch },
     })
 
+    const qualification = data?.lead_status === 'qualified'
+      ? await notifyQualifiedLead(supabase, data, 'agent')
+      : null
+
     logAriaAction('leads.update', { id, ...patch }, 'ok')
     return NextResponse.json({
       ok: true,
       lead: { ...data, next_follow_up_date: nextFollowUpDate ?? null },
+      qualification,
       message: `Lead actualizado${data?.name ? ': ' + data.name : ''}`,
     })
   } catch (err) {

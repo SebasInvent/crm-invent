@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { Plus, Calendar, UserCheck, Loader2 } from 'lucide-react'
+import { Plus, Calendar, UserCheck, Loader2, BadgeCheck, BellRing } from 'lucide-react'
 import { NewDealDialog } from '@/components/deals/NewDealDialog'
 import { FollowUpDialog } from '@/components/leads/FollowUpDialog'
 
@@ -12,6 +12,8 @@ interface Props {
   leadId: string
   leadName: string
   isConverted: boolean
+  currentStatus: string
+  currentScore: number
   /**
    * If the lead has been linked to a contact (via the converted flow
    * or manual matching), Nuevo Deal locks to that contact. Otherwise
@@ -36,6 +38,8 @@ export function LeadActionsBar({
   leadId,
   leadName,
   isConverted,
+  currentStatus,
+  currentScore,
   contactId,
   currentFollowUp,
 }: Props) {
@@ -43,6 +47,47 @@ export function LeadActionsBar({
   const [dealOpen, setDealOpen] = useState(false)
   const [followOpen, setFollowOpen] = useState(false)
   const [converting, setConverting] = useState(false)
+  const [qualifying, setQualifying] = useState(false)
+
+  async function qualify() {
+    if (!window.confirm(`¿Calificar a "${leadName}" y avisarte por WhatsApp?`)) return
+    setQualifying(true)
+    try {
+      const res = await fetch('/api/leads', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: leadId,
+          lead_status: 'qualified',
+          lead_score: Math.max(70, currentScore || 0),
+          priority: 'high',
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`)
+
+      if (json?.qualification?.sent) {
+        toast.success('Lead calificado', {
+          description: 'Te enviamos el resumen a WhatsApp: 310 755 6872.',
+        })
+      } else if (json?.qualification?.already_notified) {
+        toast.success('Lead calificado', {
+          description: 'La notificación de este lead ya había sido enviada.',
+        })
+      } else {
+        toast.warning('Lead calificado, aviso pendiente', {
+          description: json?.qualification?.error || 'No se pudo confirmar el envío a WhatsApp.',
+        })
+      }
+      router.refresh()
+    } catch (err) {
+      toast.error('No se pudo calificar', {
+        description: err instanceof Error ? err.message : 'Intenta de nuevo.',
+      })
+    } finally {
+      setQualifying(false)
+    }
+  }
 
   async function convert() {
     if (
@@ -92,6 +137,28 @@ export function LeadActionsBar({
           <Calendar className="h-3.5 w-3.5 mr-1" />
           {currentFollowUp ? 'Reagendar follow-up' : 'Programar follow-up'}
         </Button>
+
+        {!isConverted && currentStatus === 'qualified' ? (
+          <span className="inline-flex items-center gap-1 text-xs text-orange-300 px-2">
+            <BadgeCheck className="h-3.5 w-3.5" />
+            Lead calificado
+          </span>
+        ) : !isConverted ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={qualify}
+            disabled={qualifying}
+            className="border-orange-500/40 text-orange-300 hover:bg-orange-500/10 hover:text-orange-200 h-8"
+          >
+            {qualifying ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+            ) : (
+              <BellRing className="h-3.5 w-3.5 mr-1" />
+            )}
+            Calificar y avisarme
+          </Button>
+        ) : null}
 
         <div className="flex-1" />
 

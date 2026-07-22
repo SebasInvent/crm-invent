@@ -9,6 +9,11 @@ import { Notes } from '@/components/notes/Notes'
 import { LeadEditCard } from '@/components/edit/LeadEditCard'
 import { LeadActionsBar } from '@/components/leads/LeadActionsBar'
 import {
+  ContactConversation,
+  type WaMessage,
+  type WaThread,
+} from '@/components/contacts/ContactConversation'
+import {
   ArrowLeft,
   Mail,
   Phone,
@@ -22,6 +27,7 @@ import {
   Calendar,
   Brain,
   TrendingUp,
+  MessageCircle,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -35,6 +41,7 @@ const STATUS_CONFIG: Record<
   hot: { label: 'Hot', color: 'bg-red-500/20 text-red-400 border-red-500/30', Icon: Flame },
   warm: { label: 'Warm', color: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30', Icon: Thermometer },
   cold: { label: 'Cold', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30', Icon: Snowflake },
+  qualified: { label: 'Calificado', color: 'bg-orange-500/20 text-orange-300 border-orange-500/30', Icon: CheckCircle },
   dead: { label: 'Dead', color: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30', Icon: Skull },
   converted: { label: 'Cliente', color: 'bg-green-500/20 text-green-400 border-green-500/30', Icon: CheckCircle },
 }
@@ -55,9 +62,48 @@ async function getLead(id: string) {
   return data as any
 }
 
+async function getLeadConversation(lead: any): Promise<{
+  thread: WaThread
+  messages: WaMessage[]
+}> {
+  const supabase = getServiceRoleClient()
+  let { data: threads } = await supabase
+    .from('chat_threads')
+    .select('id, phone, bot_active, status')
+    .eq('lead_id', lead.id)
+    .order('last_message_at', { ascending: false })
+    .limit(1)
+
+  if (!(threads ?? []).length && lead.phone) {
+    const digits = String(lead.phone).replace(/\D/g, '')
+    const tail = digits.length >= 10 ? digits.slice(-10) : digits
+    if (tail) {
+      const fallback = await supabase
+        .from('chat_threads')
+        .select('id, phone, bot_active, status')
+        .like('phone', `%${tail}`)
+        .order('last_message_at', { ascending: false })
+        .limit(1)
+      threads = fallback.data
+    }
+  }
+
+  const thread = ((threads ?? [])[0] as WaThread | undefined) ?? null
+  if (!thread?.id) return { thread: null, messages: [] }
+
+  const { data: messages } = await supabase
+    .from('chat_messages')
+    .select('id, thread_id, phone, direction, sender, content, created_at')
+    .eq('thread_id', thread.id)
+    .order('created_at', { ascending: true })
+    .limit(200)
+  return { thread, messages: (messages ?? []) as WaMessage[] }
+}
+
 export default async function LeadDetailPage({ params }: { params: { id: string } }) {
   const lead = await getLead(params.id)
   if (!lead) notFound()
+  const conversation = await getLeadConversation(lead)
 
   const status = STATUS_CONFIG[lead.lead_status] ?? STATUS_CONFIG.cold
   const archetype = lead.jung_archetype ? ARCHETYPE_LABELS[lead.jung_archetype] : null
@@ -206,9 +252,25 @@ export default async function LeadDetailPage({ params }: { params: { id: string 
             leadId={params.id}
             leadName={lead.name}
             isConverted={lead.lead_status === 'converted' || !!lead.converted_to_client_id}
+            currentStatus={lead.lead_status}
+            currentScore={lead.lead_score}
             contactId={lead.contact_id ?? null}
             currentFollowUp={lead.next_follow_up_date ?? null}
           />
+
+          <section>
+            <h2 className="text-sm font-medium text-zinc-400 mb-4 uppercase tracking-wider flex items-center gap-2">
+              <MessageCircle className="h-4 w-4 text-emerald-400" />
+              Conversación con el lead
+            </h2>
+            <ContactConversation
+              contactPhone={lead.phone}
+              contactName={lead.name}
+              initialThread={conversation.thread}
+              initialMessages={conversation.messages}
+              readOnly
+            />
+          </section>
 
           <section>
             <h2 className="text-sm font-medium text-zinc-400 mb-4 uppercase tracking-wider">

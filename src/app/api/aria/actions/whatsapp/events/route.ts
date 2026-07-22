@@ -56,28 +56,43 @@ export async function POST(request: Request) {
   try {
     let leadId = parsed.lead_id ?? null
     let contactName = parsed.contact_name ?? null
+    let orgId: string | null = null
 
     if (!leadId) {
       const phoneTail = phone.slice(-10)
       const { data: candidates, error: leadError } = await supabase
         .from('leads')
-        .select('id, name, company, phone')
+        .select('id, name, company, phone, org_id')
         .like('phone', `%${phoneTail}%`)
         .limit(10)
       if (leadError) throw new Error(leadError.message)
 
       const matchingLead = (candidates ?? []).find(
         (lead: any) => normalizePhone(lead.phone).slice(-10) === phoneTail,
-      ) as { id: string; name?: string | null; company?: string | null } | undefined
+      ) as {
+        id: string
+        name?: string | null
+        company?: string | null
+        org_id?: string | null
+      } | undefined
       if (matchingLead) {
         leadId = matchingLead.id
         contactName = contactName ?? matchingLead.name ?? matchingLead.company ?? null
+        orgId = matchingLead.org_id ?? null
       }
+    } else {
+      const { data: lead } = await supabase
+        .from('leads')
+        .select('name, company, org_id')
+        .eq('id', leadId)
+        .maybeSingle()
+      orgId = (lead as any)?.org_id ?? null
+      contactName = contactName ?? (lead as any)?.name ?? (lead as any)?.company ?? null
     }
 
     const { data: existingThread, error: threadLookupError } = await supabase
       .from('chat_threads')
-      .select('id, bot_active, status, lead_id, contact_name')
+      .select('id, bot_active, status, lead_id, contact_name, org_id')
       .eq('phone', phone)
       .maybeSingle()
     if (threadLookupError) throw new Error(threadLookupError.message)
@@ -88,9 +103,22 @@ export async function POST(request: Request) {
       status: string
       lead_id: string | null
       contact_name: string | null
+      org_id: string | null
     } | null
 
+    orgId = thread?.org_id ?? orgId
+    if (!orgId) {
+      const { data: organizations } = await supabase
+        .from('organizations')
+        .select('id')
+        .order('created_at', { ascending: true })
+        .limit(1)
+      orgId = ((organizations ?? [])[0] as { id?: string } | undefined)?.id ?? null
+    }
+    if (!orgId) throw new Error('No organization could be resolved for the WhatsApp event')
+
     const threadUpdates = {
+      org_id: thread?.org_id ?? orgId,
       last_message_at: occurredAt,
       last_message_preview: parsed.content.slice(0, 120),
       lead_id: thread?.lead_id ?? leadId,
@@ -106,7 +134,7 @@ export async function POST(request: Request) {
         .from('chat_threads')
         .update(threadUpdates as never)
         .eq('id', thread.id)
-        .select('id, bot_active, status, lead_id, contact_name')
+        .select('id, bot_active, status, lead_id, contact_name, org_id')
         .single()
       if (error) throw new Error(error.message)
       thread = updated as typeof thread
@@ -119,7 +147,7 @@ export async function POST(request: Request) {
           bot_active: true,
           ...threadUpdates,
         } as never)
-        .select('id, bot_active, status, lead_id, contact_name')
+        .select('id, bot_active, status, lead_id, contact_name, org_id')
         .single()
       if (error) throw new Error(error.message)
       thread = created as typeof thread
@@ -136,6 +164,7 @@ export async function POST(request: Request) {
         sender: parsed.sender,
         content: parsed.content,
         created_at: occurredAt,
+        org_id: thread.org_id ?? orgId,
       } as never)
       .select('id')
       .single()
