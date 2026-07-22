@@ -53,6 +53,12 @@ export async function POST(request: Request) {
   }
 
   const occurredAt = parsed.occurred_at ?? new Date().toISOString()
+  // Production still has the original chat_threads constraint
+  // (invent | bmac | manual). Keep the external bot label in logs while
+  // persisting Tickean/Encore acquisition conversations in the Invent lane.
+  const persistedBotType = ['bmac', 'manual'].includes(parsed.bot_type)
+    ? parsed.bot_type
+    : 'invent'
   const supabase = getServiceRoleClient()
 
   try {
@@ -145,7 +151,7 @@ export async function POST(request: Request) {
         .from('chat_threads')
         .insert({
           phone,
-          bot_type: parsed.bot_type,
+          bot_type: persistedBotType,
           bot_active: true,
           ...threadUpdates,
         } as never)
