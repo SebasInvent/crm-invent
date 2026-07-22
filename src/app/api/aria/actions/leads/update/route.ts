@@ -59,20 +59,31 @@ export async function PATCH(request: Request) {
   }
 
   const { id, next_follow_up_date: nextFollowUpDate, ...directPatch } = parsed
-  const patch = {
-    ...directPatch,
-    ...(nextFollowUpDate !== undefined
-      ? {
-          notes: [
-            directPatch.notes,
-            `[SEGUIMIENTO_N8N] ${nextFollowUpDate ?? 'sin fecha'}`,
-          ].filter(Boolean).join('\n\n').slice(-2000),
-        }
-      : {}),
-  }
   const supabase = getServiceRoleClient()
+  let auditPatch: Record<string, unknown> = { ...directPatch }
 
   try {
+    const { data: current, error: currentError } = await (supabase
+      .from('leads') as any)
+      .select('notes, tags')
+      .eq('id', id)
+      .maybeSingle()
+    if (currentError) throw new Error(currentError.message)
+    if (!current) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    const incomingNote = [
+      directPatch.notes,
+      nextFollowUpDate !== undefined ? `[SEGUIMIENTO_N8N] ${nextFollowUpDate ?? 'sin fecha'}` : null,
+    ].filter(Boolean).join('\n\n')
+    const patch = {
+      ...directPatch,
+      ...(directPatch.tags
+        ? { tags: Array.from(new Set([...(current.tags ?? []), ...directPatch.tags])).slice(0, 30) }
+        : {}),
+      ...(incomingNote
+        ? { notes: [current.notes, `[${new Date().toISOString()}] ${incomingNote}`].filter(Boolean).join('\n\n').slice(-5000) }
+        : {}),
+    }
+    auditPatch = patch
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase.from('leads') as any)
       .update({ ...patch, updated_at: new Date().toISOString() })
@@ -116,7 +127,7 @@ export async function PATCH(request: Request) {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown'
-    logAriaAction('leads.update', { id, ...patch }, 'error', msg)
+    logAriaAction('leads.update', { id, ...auditPatch }, 'error', msg)
     return NextResponse.json({ error: 'Update failed', details: msg }, { status: 500 })
   }
 }
