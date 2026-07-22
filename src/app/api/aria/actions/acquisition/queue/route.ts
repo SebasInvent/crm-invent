@@ -18,6 +18,10 @@ const extractAuthorization = (notes: unknown) => {
   const match = String(notes ?? '').match(/Autorizaci[oó]n(?: de canal)?:\s*(opt_in|corporate_business|unknown|do_not_contact)/i)
   return (match?.[1]?.toLowerCase() ?? 'unknown') as 'opt_in' | 'corporate_business' | 'unknown' | 'do_not_contact'
 }
+const extractPreferredChannel = (notes: unknown) => {
+  const match = String(notes ?? '').match(/Canal recomendado:\s*(whatsapp|email|instagram|linkedin|phone|manual)/i)
+  return match?.[1]?.toLowerCase() ?? null
+}
 const touchNumber = (tags: string[]) => tags.reduce((max, tag) => {
   const match = tag.match(/^touch-(\d+)$/)
   return match ? Math.max(max, Number(match[1])) : max
@@ -79,6 +83,7 @@ export async function GET(request: Request) {
       const tags = Array.isArray(lead.tags) ? lead.tags : []
       const touch = touchNumber(tags)
       const authorization = extractAuthorization(lead.notes)
+      const preferredChannel = extractPreferredChannel(lead.notes)
       const hasPhone = String(lead.phone ?? '').replace(/\D/g, '').length >= 10
       const hasEmail = !fakeEmail(lead.email)
       const product = productById.get(lead.product_id) as any
@@ -86,7 +91,17 @@ export async function GET(request: Request) {
       const nextTouch = touch === 0 ? 1 : touch + 1
       const dueHours = touch === 0 ? 0 : touch === 1 ? 48 : touch === 2 ? 72 : touch === 3 ? 120 : Infinity
       const action = touch === 0 ? 'first_contact' : touch === 1 ? 'followup_day_2' : touch === 2 ? 'followup_day_5' : touch === 3 ? 'close_loop_day_10' : 'nurture'
-      let channel = hasPhone ? 'whatsapp' : hasEmail ? 'email' : 'manual'
+      let channel = preferredChannel === 'whatsapp' && hasPhone
+        ? 'whatsapp'
+        : preferredChannel === 'email' && hasEmail
+          ? 'email'
+          : preferredChannel && ['instagram', 'linkedin', 'phone', 'manual'].includes(preferredChannel)
+            ? 'manual'
+            : hasPhone
+              ? 'whatsapp'
+              : hasEmail
+                ? 'email'
+                : 'manual'
       if (tags.includes('do-not-contact') || authorization === 'do_not_contact') channel = 'suppressed'
       const authorized = authorization === 'opt_in' || authorization === 'corporate_business'
       const autoEligible = channel === 'email'
@@ -108,6 +123,7 @@ export async function GET(request: Request) {
         deal_id: dealByLeadId.get(lead.id) ?? null,
         product_slug: product?.slug ?? null,
         contact_authorization: authorization,
+        preferred_channel: preferredChannel,
         current_touch: touch,
         next_touch: nextTouch,
         next_action: action,
