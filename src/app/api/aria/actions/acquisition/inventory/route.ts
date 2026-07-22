@@ -126,11 +126,12 @@ function buildCandidates(inventory: Awaited<ReturnType<typeof loadInventory>>, p
       JSON.stringify(contact.source_details ?? {}),
       ...machineDeals.flatMap((deal) => [deal.name, deal.description]),
     ].filter(Boolean).join(' ')
+    const normalizedEvidence = evidence.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     const excludedReason = !product || !['tickean', 'encore'].includes(product.slug)
       ? 'sin_producto_tickean_encore'
       : !sourceIsMachine
         ? 'sin_fuente_n8n_brightdata'
-        : !nightlifeEvidence.test(evidence)
+        : !nightlifeEvidence.test(normalizedEvidence)
           ? 'sin_evidencia_nightlife_eventos'
         : testRecord.test(label)
           ? 'registro_prueba'
