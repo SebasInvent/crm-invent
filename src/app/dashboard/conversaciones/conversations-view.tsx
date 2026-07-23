@@ -32,6 +32,7 @@ type Message = {
   direction: 'inbound' | 'outbound'
   sender: 'customer' | 'bot' | 'human'
   content: string
+  metadata?: { delivery_status?: string } | null
   created_at: string
 }
 
@@ -104,20 +105,28 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
       .channel('chat_messages_changes_v2')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'chat_messages' },
+        { event: '*', schema: 'public', table: 'chat_messages' },
         (payload) => {
           const newMsg = payload.new as Message
+          if (!newMsg?.id) return
           // Append to the cached messages list for that thread
           queryClient.setQueryData<Message[]>(
             queryKeys.conversaciones.messages(newMsg.thread_id),
             (prev) => {
               if (!prev) return [newMsg]
+              if (payload.eventType === 'UPDATE') {
+                return prev.map((message) => message.id === newMsg.id ? newMsg : message)
+              }
               if (prev.find((m) => m.id === newMsg.id)) return prev
               return [...prev, newMsg]
             },
           )
           // Bump unread counter only for inbound messages on inactive threads
-          if (newMsg.thread_id !== activeThreadId && newMsg.direction === 'inbound') {
+          if (
+            payload.eventType === 'INSERT' &&
+            newMsg.thread_id !== activeThreadId &&
+            newMsg.direction === 'inbound'
+          ) {
             setUnreadCount((n) => n + 1)
           }
         },
@@ -633,6 +642,14 @@ function MessageBubble({ message }: { message: Message }) {
   const isOutbound = message.direction === 'outbound'
   const isHuman = message.sender === 'human'
   const isBot = message.sender === 'bot'
+  const deliveryLabel: Record<string, string> = {
+    accepted: 'Aceptado por Meta',
+    sent: 'Enviado',
+    delivered: 'Entregado',
+    read: 'Leído',
+    failed: 'Falló',
+  }
+  const deliveryStatus = message.metadata?.delivery_status
 
   return (
     <div className={cn('flex', isOutbound ? 'justify-end' : 'justify-start')}>
@@ -663,6 +680,9 @@ function MessageBubble({ message }: { message: Message }) {
               hour: '2-digit',
               minute: '2-digit',
             })}
+            {isOutbound && deliveryStatus
+              ? ` · ${deliveryLabel[deliveryStatus] || deliveryStatus}`
+              : ''}
           </span>
         </div>
       </div>

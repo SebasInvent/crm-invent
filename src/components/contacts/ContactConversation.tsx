@@ -89,12 +89,15 @@ export function ContactConversation({
       .channel(`contact_wa_${match}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'chat_messages' },
+        { event: '*', schema: 'public', table: 'chat_messages' },
         (payload) => {
           const m = payload.new as WaMessage
-          if (!m.phone || !m.phone.endsWith(match)) return
+          if (!m?.id || !m.phone || !m.phone.endsWith(match)) return
           queryClient.setQueryData<WaMessage[]>(msgKey, (prev) => {
             const list = prev ?? []
+            if (payload.eventType === 'UPDATE') {
+              return list.map((message) => message.id === m.id ? m : message)
+            }
             if (list.find((x) => x.id === m.id)) return list
             // Reemplaza el mensaje optimista temporal del mismo contenido
             const withoutTemp = list.filter(
