@@ -26,6 +26,16 @@ const deliveryStatusSchema = z.object({
   error_message: z.string().min(1).max(1000).optional(),
 })
 
+const threadControlSchema = z.object({
+  operation: z.literal('thread_control'),
+  thread_id: z.string().uuid().optional(),
+  phone: z.string().min(8).max(30).optional(),
+  bot_active: z.boolean(),
+  status: z.enum(['active', 'cold', 'qualified', 'closed']).optional(),
+}).refine((value) => Boolean(value.thread_id || value.phone), {
+  message: 'thread_id or phone is required',
+})
+
 const DELIVERY_STATUS_RANK: Record<string, number> = {
   accepted: 0,
   sent: 1,
@@ -293,9 +303,66 @@ export async function PATCH(request: Request) {
   const auth = requireAriaAuth(request)
   if (auth.error) return auth.error
 
+  let rawBody: unknown
+  try {
+    rawBody = await request.json()
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Invalid WhatsApp patch request',
+        details: error instanceof Error ? error.message : 'parse failed',
+      },
+      { status: 400 },
+    )
+  }
+
+  const supabase = getServiceRoleClient()
+
+  const threadControl = threadControlSchema.safeParse(rawBody)
+  if (threadControl.success) {
+    try {
+      const phone = threadControl.data.phone
+        ? normalizePhone(threadControl.data.phone)
+        : null
+      let query = supabase
+        .from('chat_threads')
+        .update({
+          bot_active: threadControl.data.bot_active,
+          ...(threadControl.data.status ? { status: threadControl.data.status } : {}),
+        } as never)
+      query = threadControl.data.thread_id
+        ? query.eq('id', threadControl.data.thread_id)
+        : query.eq('phone', phone!)
+      const { data: thread, error } = await query
+        .select('id, phone, bot_active, status, lead_id')
+        .maybeSingle()
+      if (error) throw new Error(error.message)
+      if (!thread) {
+        return NextResponse.json({ error: 'WhatsApp thread not found' }, { status: 404 })
+      }
+
+      logAriaAction('whatsapp.thread_control', {
+        bot_active: threadControl.data.bot_active,
+        status: threadControl.data.status ?? null,
+        has_lead: Boolean((thread as { lead_id?: string | null }).lead_id),
+      }, 'ok')
+
+      return NextResponse.json({ ok: true, thread })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown'
+      logAriaAction('whatsapp.thread_control', {
+        bot_active: threadControl.data.bot_active,
+      }, 'error', message)
+      return NextResponse.json(
+        { error: 'WhatsApp thread update failed', details: message },
+        { status: 500 },
+      )
+    }
+  }
+
   let parsed: z.infer<typeof deliveryStatusSchema>
   try {
-    parsed = deliveryStatusSchema.parse(await request.json())
+    parsed = deliveryStatusSchema.parse(rawBody)
   } catch (error) {
     return NextResponse.json(
       {
@@ -306,7 +373,6 @@ export async function PATCH(request: Request) {
     )
   }
 
-  const supabase = getServiceRoleClient()
   try {
     const { data: messages, error: lookupError } = await supabase
       .from('chat_messages')
