@@ -15,7 +15,23 @@ const eventSchema = z.object({
   bot_type: z.string().min(1).max(60).default('tickean'),
   thread_status: z.enum(['active', 'cold']).optional(),
   delivery_status: z.enum(['accepted', 'sent', 'delivered', 'read', 'failed']).optional(),
+  provider_message_id: z.string().min(10).max(300).optional(),
 })
+
+const deliveryStatusSchema = z.object({
+  provider_message_id: z.string().min(10).max(300),
+  delivery_status: z.enum(['sent', 'delivered', 'read', 'failed']),
+  occurred_at: z.string().datetime().optional(),
+  recipient_id: z.string().min(8).max(30).optional(),
+  error_message: z.string().min(1).max(1000).optional(),
+})
+
+const DELIVERY_STATUS_RANK: Record<string, number> = {
+  accepted: 0,
+  sent: 1,
+  delivered: 2,
+  read: 3,
+}
 
 const normalizePhone = (value: unknown) => {
   const digits = String(value ?? '').replace(/\D/g, '')
@@ -222,7 +238,10 @@ export async function POST(request: Request) {
         direction: parsed.direction,
         sender: parsed.sender,
         content: parsed.content,
-        metadata: parsed.delivery_status ? { delivery_status: parsed.delivery_status } : {},
+        metadata: {
+          ...(parsed.delivery_status ? { delivery_status: parsed.delivery_status } : {}),
+          ...(parsed.provider_message_id ? { provider_message_id: parsed.provider_message_id } : {}),
+        },
         created_at: occurredAt,
         org_id: thread.org_id ?? orgId,
       } as never)
@@ -236,6 +255,7 @@ export async function POST(request: Request) {
       bot_type: parsed.bot_type,
       has_lead: Boolean(thread.lead_id),
       delivery_status: parsed.delivery_status ?? null,
+      has_provider_message_id: Boolean(parsed.provider_message_id),
     }, 'ok')
 
     return NextResponse.json({
@@ -246,6 +266,7 @@ export async function POST(request: Request) {
       bot_active: thread.bot_active,
       status: thread.status,
       delivery_status: parsed.delivery_status ?? null,
+      provider_message_id: parsed.provider_message_id ?? null,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown'
@@ -256,6 +277,123 @@ export async function POST(request: Request) {
     }, 'error', message)
     return NextResponse.json(
       { error: 'WhatsApp event failed', details: message },
+      { status: 500 },
+    )
+  }
+}
+
+export async function PATCH(request: Request) {
+  const block = rateLimitOrBlock(request, {
+    window: '1m',
+    max: 300,
+    key: 'aria-whatsapp-events-status',
+  })
+  if (block) return block
+
+  const auth = requireAriaAuth(request)
+  if (auth.error) return auth.error
+
+  let parsed: z.infer<typeof deliveryStatusSchema>
+  try {
+    parsed = deliveryStatusSchema.parse(await request.json())
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: 'Invalid WhatsApp delivery status',
+        details: error instanceof Error ? error.message : 'parse failed',
+      },
+      { status: 400 },
+    )
+  }
+
+  const supabase = getServiceRoleClient()
+  try {
+    const { data: messages, error: lookupError } = await supabase
+      .from('chat_messages')
+      .select('id, thread_id, metadata, created_at')
+      .eq('metadata->>provider_message_id', parsed.provider_message_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (lookupError) throw new Error(lookupError.message)
+
+    const message = (messages ?? [])[0] as {
+      id: string
+      thread_id: string
+      metadata?: Record<string, unknown> | null
+    } | undefined
+    if (!message) {
+      return NextResponse.json(
+        { error: 'WhatsApp message not found', provider_message_id: parsed.provider_message_id },
+        { status: 404 },
+      )
+    }
+
+    const currentMetadata = message.metadata ?? {}
+    const currentStatus =
+      typeof currentMetadata.delivery_status === 'string'
+        ? currentMetadata.delivery_status
+        : 'accepted'
+    const currentOccurredAt =
+      typeof currentMetadata.delivery_status_at === 'string'
+        ? currentMetadata.delivery_status_at
+        : null
+    const incomingOccurredAt = parsed.occurred_at ?? new Date().toISOString()
+
+    // Meta can deliver status callbacks out of order. Never downgrade a
+    // successful lifecycle, and use the provider timestamp for equal stages.
+    const currentRank = DELIVERY_STATUS_RANK[currentStatus] ?? -1
+    const incomingRank = DELIVERY_STATUS_RANK[parsed.delivery_status] ?? -1
+    const shouldApply =
+      parsed.delivery_status === 'failed'
+        ? currentRank <= DELIVERY_STATUS_RANK.sent
+        : incomingRank > currentRank ||
+          (incomingRank === currentRank &&
+            (!currentOccurredAt || incomingOccurredAt >= currentOccurredAt))
+
+    if (!shouldApply) {
+      return NextResponse.json({
+        ok: true,
+        ignored: true,
+        message_id: message.id,
+        thread_id: message.thread_id,
+        delivery_status: currentStatus,
+      })
+    }
+
+    const nextMetadata: Record<string, unknown> = {
+      ...currentMetadata,
+      delivery_status: parsed.delivery_status,
+      delivery_status_at: incomingOccurredAt,
+      ...(parsed.recipient_id ? { recipient_id: normalizePhone(parsed.recipient_id) } : {}),
+      ...(parsed.error_message ? { delivery_error: parsed.error_message } : {}),
+    }
+    const { error: updateError } = await supabase
+      .from('chat_messages')
+      .update({ metadata: nextMetadata } as never)
+      .eq('id', message.id)
+    if (updateError) throw new Error(updateError.message)
+
+    logAriaAction('whatsapp.delivery_status', {
+      delivery_status: parsed.delivery_status,
+      has_recipient_id: Boolean(parsed.recipient_id),
+      has_error: Boolean(parsed.error_message),
+    }, 'ok')
+
+    return NextResponse.json({
+      ok: true,
+      ignored: false,
+      message_id: message.id,
+      thread_id: message.thread_id,
+      delivery_status: parsed.delivery_status,
+      occurred_at: incomingOccurredAt,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown'
+    logAriaAction('whatsapp.delivery_status', {
+      delivery_status: parsed.delivery_status,
+    }, 'error', message)
+    return NextResponse.json(
+      { error: 'WhatsApp delivery status update failed', details: message },
       { status: 500 },
     )
   }
