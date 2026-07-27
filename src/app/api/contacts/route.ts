@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
+import { pushContactToPeer } from '@/lib/crm-bridge'
 
 /**
  * POST /api/contacts
@@ -97,6 +98,8 @@ export async function POST(request: Request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  await pushContactToPeer(data, 'contact.created')
 
   return NextResponse.json({ ok: true, contact: data })
 }
