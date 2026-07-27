@@ -32,6 +32,7 @@ import {
   Kanban
 } from 'lucide-react'
 import type { Deal, PipelineStage, Contact } from '@/types/crm-core'
+import { useOrg } from '@/components/orgs/OrgProvider'
 
 interface KanbanColumnData {
   id: string;
@@ -68,6 +69,7 @@ export default function PipelinePage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [newDeal, setNewDeal] = useState<NewDealForm>(emptyDealForm)
+  const { activeOrgId } = useOrg()
 
   // ─── 1. Resolve the selected product → its default pipeline_id +
   //     stages. The kanban now filters strictly by pipeline so each
@@ -111,39 +113,43 @@ export default function PipelinePage() {
 
   // ─── 2. Stages for the selected pipeline only.
   const { data: stagesData = [], isLoading: stagesLoading } = useSupabaseQuery<PipelineStage[]>({
-    queryKey: ['pipeline', 'stages', pipelineId],
+    queryKey: ['pipeline', 'stages', activeOrgId, pipelineId],
     queryFn: () =>
       supabase
         .from('pipeline_stages')
         .select('*')
         .eq('is_active', true)
         .eq('pipeline_id', pipelineId!)
+        .eq('org_id', activeOrgId!)
         .order('order_index') as unknown as Promise<{ data: PipelineStage[] | null; error: { message: string } | null }>,
-    enabled: !!pipelineId,
+    enabled: !!pipelineId && !!activeOrgId,
     staleTime: 5 * 60_000,
   })
 
   // ─── 3. Deals scoped to this product only.
   const { data: dealsData = [], isLoading: dealsLoading } = useSupabaseQuery<Deal[]>({
-    queryKey: ['pipeline', 'deals', productId],
+    queryKey: ['pipeline', 'deals', activeOrgId, productId],
     queryFn: () =>
       supabase
         .from('deals_full')
         .select('*')
         .eq('status', 'open')
         .eq('product_id', productId!)
+        .eq('org_id', activeOrgId!)
         .order('updated_at', { ascending: false }) as unknown as Promise<{ data: Deal[] | null; error: { message: string } | null }>,
-    enabled: !!productId,
+    enabled: !!productId && !!activeOrgId,
   })
 
   const { data: contacts = [] } = useSupabaseQuery<Contact[]>({
-    queryKey: queryKeys.pipeline.contacts,
+    queryKey: [...queryKeys.pipeline.contacts, activeOrgId],
     queryFn: () =>
       supabase
         .from('contacts')
         .select('id, first_name, last_name, email, company_name')
         .eq('status', 'active')
+        .eq('org_id', activeOrgId!)
         .order('first_name') as unknown as Promise<{ data: Contact[] | null; error: { message: string } | null }>,
+    enabled: !!activeOrgId,
     staleTime: 5 * 60_000,
   })
 
@@ -206,7 +212,7 @@ export default function PipelinePage() {
     // Optimistic cache update — repaint the kanban immediately.
     // OJO: la query real usa ['pipeline','deals',productId]; setQueryData exige
     // match EXACTO del key — con el key corto la tarjeta "rebotaba" a su columna.
-    queryClient.setQueryData<Deal[]>(['pipeline', 'deals', productId], (prev) =>
+    queryClient.setQueryData<Deal[]>(['pipeline', 'deals', activeOrgId, productId], (prev) =>
       prev?.map((d) =>
         d.id === draggableId
           ? { ...d, stage_id: destination.droppableId, probability: destStage.probability }

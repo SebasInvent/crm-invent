@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 
@@ -35,13 +35,27 @@ const productCreateSchema = z.object({
 })
 
 export async function GET() {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   const supabase = getServiceRoleClient()
+  const { data: pipelines, error: pipelineError } = await (supabase.from('pipelines') as any)
+    .select('product_id')
+    .eq('org_id', org.orgId)
+    .eq('is_active', true)
+
+  if (pipelineError) return NextResponse.json({ error: pipelineError.message }, { status: 500 })
+  const productIds = Array.from(new Set(
+    ((pipelines as Array<{ product_id: string | null }> | null) ?? [])
+      .map((pipeline) => pipeline.product_id)
+      .filter((id): id is string => Boolean(id)),
+  ))
+  if (productIds.length === 0) return NextResponse.json({ ok: true, products: [] })
+
   const { data, error } = await supabase
     .from('products')
     .select('*')
+    .in('id', productIds)
     .order('status') // active first
     .order('name')
 
@@ -53,8 +67,8 @@ export async function POST(request: Request) {
   const block = rateLimitOrBlock(request, { window: '1m', max: 30, key: 'products-create' })
   if (block) return block
 
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   let parsed: z.infer<typeof productCreateSchema>
   try {

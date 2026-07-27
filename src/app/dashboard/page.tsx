@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { getServiceRoleClient } from '@/lib/supabase'
+import { getActiveOrg } from '@/lib/api-auth'
+import { redirect } from 'next/navigation'
 import {
   Flame,
   MessageCircle,
@@ -36,7 +38,7 @@ function startOfDayBogotaIso(): string {
   return new Date(utcStart).toISOString()
 }
 
-async function getSalesStats() {
+async function getSalesStats(orgId: string) {
   const supabase = getServiceRoleClient()
   const now = new Date()
   const startOfDay = startOfDayBogotaIso()
@@ -53,28 +55,32 @@ async function getSalesStats() {
     recentHotLeads,
     recentMessages,
   ] = await Promise.all([
-    supabase.from('leads' as never).select('id', { count: 'exact', head: true }).eq('lead_status' as never, 'hot'),
+    supabase.from('leads' as never).select('id', { count: 'exact', head: true }).eq('org_id' as never, orgId).eq('lead_status' as never, 'hot'),
     supabase
       .from('leads' as never)
       .select('id', { count: 'exact', head: true })
+      .eq('org_id' as never, orgId)
       .eq('lead_status' as never, 'hot')
       .gte('created_at' as never, startOfDay),
     supabase
       .from('leads' as never)
       .select('id', { count: 'exact', head: true })
+      .eq('org_id' as never, orgId)
       .gte('created_at' as never, startOfWeek),
-    supabase.from('chat_threads' as never).select('id', { count: 'exact', head: true }).eq('status' as never, 'active'),
-    supabase.from('chat_threads' as never).select('id', { count: 'exact', head: true }).eq('bot_active' as never, false),
-    supabase.from('chat_threads' as never).select('id', { count: 'exact', head: true }).eq('status' as never, 'qualified'),
+    supabase.from('chat_threads' as never).select('id', { count: 'exact', head: true }).eq('org_id' as never, orgId).eq('status' as never, 'active'),
+    supabase.from('chat_threads' as never).select('id', { count: 'exact', head: true }).eq('org_id' as never, orgId).eq('bot_active' as never, false),
+    supabase.from('chat_threads' as never).select('id', { count: 'exact', head: true }).eq('org_id' as never, orgId).eq('status' as never, 'qualified'),
     supabase
       .from('leads' as never)
       .select('*')
+      .eq('org_id' as never, orgId)
       .eq('lead_status' as never, 'hot')
       .order('created_at' as never, { ascending: false })
       .limit(5),
     supabase
       .from('chat_threads' as never)
       .select('*')
+      .eq('org_id' as never, orgId)
       .order('last_message_at' as never, { ascending: false })
       .limit(5),
   ])
@@ -94,7 +100,9 @@ async function getSalesStats() {
 }
 
 export default async function DashboardPage() {
-  const s = await getSalesStats()
+  const org = await getActiveOrg()
+  if (org.error) redirect('/login')
+  const s = await getSalesStats(org.orgId)
 
   return (
     <div className="space-y-8 max-w-[1400px]">

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireAuth, requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 
@@ -27,8 +27,8 @@ const productPatchSchema = z
   .refine((v) => Object.keys(v).length > 0, { message: 'At least one field required' })
 
 export async function GET(_req: Request, { params }: { params: { slug: string } }) {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
 
   const supabase = getServiceRoleClient()
   const { data: product, error: pErr } = await supabase
@@ -46,6 +46,7 @@ export async function GET(_req: Request, { params }: { params: { slug: string } 
     .select('id, name, is_default, is_active')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .eq('product_id', (product as any).id)
+    .eq('org_id', org.orgId)
 
   let stages: unknown[] = []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -56,6 +57,7 @@ export async function GET(_req: Request, { params }: { params: { slug: string } 
       .select('id, name, default_probability, order_index, color, is_active')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .eq('pipeline_id', (defaultPip as any).id)
+      .eq('org_id', org.orgId)
       .order('order_index')
     stages = s || []
   }

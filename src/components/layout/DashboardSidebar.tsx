@@ -27,11 +27,14 @@ import {
   Menu,
   Target,
   CalendarCheck,
+  Globe2,
   X,
 } from 'lucide-react'
+import { OrgSwitcher } from '@/components/orgs/OrgSwitcher'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Operación Global', href: '/dashboard/yumk', icon: Globe2 },
   { name: 'Conversaciones', href: '/dashboard/conversaciones', icon: MessageCircle },
   { name: 'Contactos 360°', href: '/dashboard/contacts', icon: Contact2 },
   { name: 'Leads', href: '/dashboard/leads', icon: Target },
@@ -140,6 +143,8 @@ export function DashboardSidebar() {
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        <OrgSwitcher />
 
         {/* Search hint — Cmd+K opens the global command palette */}
         <button

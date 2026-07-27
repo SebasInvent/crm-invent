@@ -19,6 +19,7 @@ const dealCreateSchema = z.object({
   description: z.string().max(2000).optional().nullable(),
   pipeline_id: z.string().uuid().optional().nullable(),
   stage_id: z.string().uuid().optional().nullable(),
+  product_id: z.string().uuid().optional().nullable(),
   value: z.coerce.number().min(0).max(1_000_000_000).optional().default(0),
   currency: z.enum(['USD', 'COP', 'EUR', 'MXN', 'BRL']).optional().default('USD'),
   probability: z.coerce.number().int().min(0).max(100).optional().default(0),
@@ -47,6 +48,25 @@ export async function POST(request: Request) {
 
   const supabase = getServiceRoleClient()
 
+  const { data: contact } = await (supabase.from('contacts') as any)
+    .select('id')
+    .eq('id', parsed.contact_id)
+    .eq('org_id', org.orgId)
+    .maybeSingle()
+  if (!contact) return NextResponse.json({ error: 'Contact not found in active workspace' }, { status: 404 })
+
+  if (parsed.pipeline_id) {
+    const { data: pipeline } = await (supabase.from('pipelines') as any)
+      .select('id, product_id')
+      .eq('id', parsed.pipeline_id)
+      .eq('org_id', org.orgId)
+      .maybeSingle()
+    if (!pipeline) return NextResponse.json({ error: 'Pipeline not found in active workspace' }, { status: 404 })
+    if (parsed.product_id && pipeline.product_id !== parsed.product_id) {
+      return NextResponse.json({ error: 'Product does not match pipeline' }, { status: 400 })
+    }
+  }
+
   // If stage_id is given but probability isn't, look up the stage's
   // default probability so the kanban renders correctly.
   let probability = parsed.probability
@@ -67,6 +87,7 @@ export async function POST(request: Request) {
     description: parsed.description,
     pipeline_id: parsed.pipeline_id,
     stage_id: parsed.stage_id,
+    product_id: parsed.product_id,
     value: parsed.value,
     currency: parsed.currency,
     probability,
