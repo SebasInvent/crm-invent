@@ -64,7 +64,7 @@ export async function GET(request: Request) {
   let query = supabase
     .from('notes')
     .select('id, body, author_email, author_id, created_at, updated_at, lead_id, contact_id, deal_id')
-    .eq('org_id', org.orgId)
+    .in('org_id', org.accessibleOrgIds)
     .order('created_at', { ascending: false })
     .limit(200)
 

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAuth } from '@/lib/api-auth'
+import { requireOrg } from '@/lib/api-auth'
 import { rateLimitOrBlock } from '@/lib/rate-limit'
 import { getServiceRoleClient } from '@/lib/supabase'
 
@@ -66,15 +66,16 @@ const contactPatchSchema = z
   .refine((v) => Object.keys(v).length > 0, { message: 'At least one field required' })
 
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
   if (!params.id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
   const supabase = getServiceRoleClient()
   const { data, error } = await supabase
-    .from('contacts_with_organization')
+    .from('contacts_network_view')
     .select('*')
     .eq('id', params.id)
+    .in('org_id', org.accessibleOrgIds)
     .single()
 
   if (error || !data) {
@@ -88,8 +89,8 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   const block = rateLimitOrBlock(request, { window: '1m', max: 60, key: 'contacts-patch' })
   if (block) return block
 
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
   if (!params.id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
   let parsed: z.infer<typeof contactPatchSchema>
@@ -115,6 +116,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   const { data, error } = await (supabase.from('contacts') as any)
     .update(patch)
     .eq('id', params.id)
+    .in('org_id', org.accessibleOrgIds)
     .select('*')
     .single()
 
@@ -132,8 +134,8 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
   const block = rateLimitOrBlock(request, { window: '1m', max: 30, key: 'contacts-delete' })
   if (block) return block
 
-  const auth = await requireAuth()
-  if (auth.error) return auth.error
+  const org = await requireOrg()
+  if (org.error) return org.error
   if (!params.id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
   const url = new URL(request.url)
@@ -143,7 +145,10 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
 
   if (hard) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.from('contacts') as any).delete().eq('id', params.id)
+    const { error } = await (supabase.from('contacts') as any)
+      .delete()
+      .eq('id', params.id)
+      .in('org_id', org.accessibleOrgIds)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true, deleted: 'hard' })
   }
@@ -153,6 +158,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
   const { error } = await (supabase.from('contacts') as any)
     .update({ status: 'archived', updated_at: new Date().toISOString() })
     .eq('id', params.id)
+    .in('org_id', org.accessibleOrgIds)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({ ok: true, deleted: 'soft' })

@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react'
 import { OrgSwitcher } from '@/components/orgs/OrgSwitcher'
+import { useOrg } from '@/components/orgs/OrgProvider'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -58,6 +59,7 @@ const navigation = [
 export function DashboardSidebar() {
   const pathname = usePathname()
   const router = useRouter()
+  const { activeOrg } = useOrg()
   const [mobileOpen, setMobileOpen] = useState(false)
 
   // Close drawer on route change (so clicking a nav link in mobile dismisses)
@@ -88,6 +90,7 @@ export function DashboardSidebar() {
   }, [mobileOpen])
 
   async function handleLogout() {
+    window.sessionStorage.removeItem('control:workspace-override')
     const supabase = getAuthClient()
     await supabase.auth.signOut()
     router.push('/login')
@@ -129,11 +132,12 @@ export function DashboardSidebar() {
       >
         {/* Header with logo + close button (mobile) */}
         <div className="flex h-16 items-center justify-between px-6 border-b border-zinc-800 flex-shrink-0">
-          <img
-            src="https://www.inventagency.co/logo-white.png"
-            alt="Invent"
-            className="h-8 w-auto"
-          />
+          <div>
+            <p className="text-sm font-black tracking-[0.18em] text-white">CONTROL</p>
+            <p className="mt-0.5 text-[9px] uppercase tracking-[0.14em] text-zinc-600">
+              {activeOrg?.slug === 'yumk' ? 'Yumk Group' : 'Invent Agency'}
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => setMobileOpen(false)}

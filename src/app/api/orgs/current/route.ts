@@ -34,5 +34,19 @@ export async function GET() {
   let active = (prof as { active_org_id?: string } | null)?.active_org_id ?? null
   if (!active || !orgs.find((o) => o.id === active)) active = orgs[0]?.id ?? null
 
-  return NextResponse.json({ active_org_id: active, orgs })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: connections } = active
+    ? await (svc.from('organization_connections') as any)
+        .select('connected_org_id, relationship, share_contacts, share_commercial_data')
+        .eq('org_id', active)
+        .eq('status', 'active')
+    : { data: [] }
+
+  return NextResponse.json({
+    active_org_id: active,
+    orgs,
+    connections: connections ?? [],
+    connected_org_ids: ((connections as Array<{ connected_org_id: string }> | null) ?? [])
+      .map((connection) => connection.connected_org_id),
+  })
 }

@@ -63,7 +63,7 @@ export async function GET(request: Request) {
       supabase
         .from('contacts')
         .select('id, first_name, last_name, email, phone, company_name, type')
-        .eq('org_id', org.orgId)
+        .in('org_id', org.accessibleOrgIds)
         .or(
           `first_name.ilike.${ilike},last_name.ilike.${ilike},email.ilike.${ilike},phone.ilike.${ilike},company_name.ilike.${ilike}`,
         )
@@ -71,7 +71,7 @@ export async function GET(request: Request) {
       supabase
         .from('leads')
         .select('id, name, email, company, lead_status, lead_score')
-        .eq('org_id', org.orgId)
+        .in('org_id', org.accessibleOrgIds)
         .or(`name.ilike.${ilike},email.ilike.${ilike},company.ilike.${ilike}`)
         .order('lead_score', { ascending: false })
         .limit(limit),
@@ -79,7 +79,7 @@ export async function GET(request: Request) {
         .from('deals_full')
         .select('id, name, value, status, contact_first_name, contact_last_name, contact_company')
         // deals_full arrastra d.org_id desde 024_views_org_id.sql
-        .eq('org_id', org.orgId)
+        .in('org_id', org.accessibleOrgIds)
         .or(
           `name.ilike.${ilike},contact_first_name.ilike.${ilike},contact_last_name.ilike.${ilike},contact_company.ilike.${ilike}`,
         )

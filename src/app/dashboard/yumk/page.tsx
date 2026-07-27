@@ -74,7 +74,7 @@ export default async function YumkOperationsPage() {
           <p className="mt-8 text-xs font-semibold uppercase tracking-[0.22em] text-zinc-500">Operación Yumk</p>
           <h1 className="mt-3 text-4xl font-bold tracking-tight text-white">Cambia al workspace Yumk Group</h1>
           <p className="mt-4 max-w-2xl text-zinc-400">
-            El workspace activo es {organization?.name ?? 'otro equipo'}. Usa el selector bajo el logo para entrar a la operación USA + Colombia sin mezclar información con Invent.
+            El contexto activo es {organization?.name ?? 'otro equipo'}. Usa el selector de marca para abrir la operación USA + Colombia. Los clientes y su historial permanecen conectados con Invent.
           </p>
         </div>
       </div>
@@ -141,7 +141,7 @@ export default async function YumkOperationsPage() {
           </div>
           <h1 className="mt-3 text-4xl font-bold tracking-[-0.04em] text-white">Yumk Global Operations</h1>
           <p className="mt-2 max-w-3xl text-sm text-zinc-400">
-            Diagnóstico, venta, propuesta, facturación y ejecución en una sola fuente de verdad, separados por entidad y moneda.
+            Diagnóstico, venta, propuesta, facturación y ejecución en una sola fuente de verdad. Yumk conserva atribución por entidad y moneda mientras comparte clientes e historial con Invent.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

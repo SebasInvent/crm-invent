@@ -49,6 +49,11 @@ type NewContactInput = {
   source: 'manual' | 'web_form' | 'telegram' | 'openclaw' | 'referral' | 'linkedin'
 }
 
+type ContactCreateResult = {
+  contactId: string
+  existing: boolean
+}
+
 const emptyContactForm: NewContactInput = {
   first_name: '',
   last_name: '',
@@ -77,7 +82,7 @@ export default function ContactsPage() {
     queryKey: queryKeys.contacts.list(filterType),
     queryFn: async () => {
       let query = supabase
-        .from('contacts_with_organization')
+        .from('contacts_network_view')
         .select('*')
         .order('created_at', { ascending: false })
       if (filterType !== 'all') query = query.eq('type', filterType)
@@ -87,20 +92,31 @@ export default function ContactsPage() {
 
   // Mutation: create contact. On success the cache is invalidated, the
   // dialog closes, and the form resets — no manual refetch needed.
-  const createContactMutation = useSupabaseMutation<NewContactInput, void>({
+  const createContactMutation = useSupabaseMutation<NewContactInput, ContactCreateResult>({
     mutationFn: async (input) => {
-      const { error } = await supabase
-        .from('contacts')
-        .insert(input as any)
-      if (error) throw new Error(error.message)
+      const response = await fetch('/api/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+      const json = await response.json().catch(() => ({}))
+      if (response.status === 409 && json.contact?.id) {
+        return { contactId: json.contact.id as string, existing: true }
+      }
+      if (!response.ok || !json.contact?.id) {
+        throw new Error(json.message || json.error || 'No se pudo crear el contacto')
+      }
+      return { contactId: json.contact.id as string, existing: false }
     },
     invalidateKeys: [queryKeys.contacts.all],
-    successMessage: (_, input) =>
-      `Contacto creado: ${input.first_name} ${input.last_name}`.trim(),
+    successMessage: (output, input) => output.existing
+      ? 'Cliente encontrado en la red compartida'
+      : `Contacto creado: ${input.first_name} ${input.last_name}`.trim(),
     errorMessage: 'No se pudo crear el contacto',
-    onSuccess: () => {
+    onSuccess: (output) => {
       setIsCreateDialogOpen(false)
       setNewContact(emptyContactForm)
+      if (output.existing) router.push(`/dashboard/contacts/${output.contactId}`)
     },
   })
 
@@ -299,6 +315,11 @@ export default function ContactsPage() {
                       >
                         {contact.priority}
                       </Badge>
+                      {contact.workspace_name && (
+                        <Badge variant="outline" className="border-zinc-700 bg-zinc-900 text-zinc-400">
+                          Origen: {contact.workspace_name}
+                        </Badge>
+                      )}
                     </div>
                     
                     <div className="flex items-center gap-4 text-sm text-zinc-400 mt-1">

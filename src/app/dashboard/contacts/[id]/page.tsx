@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import {
 import { ArrowLeft, Mail, Phone, Building2, Star, TrendingUp, Briefcase } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { getActiveOrg } from '@/lib/api-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,12 +28,13 @@ const TYPE_BADGES: Record<string, string> = {
   supplier: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
 }
 
-async function getContact(id: string) {
+async function getContact(id: string, orgIds: string[]) {
   const supabase = getServiceRoleClient()
   const { data, error } = await supabase
-    .from('contacts_with_organization')
+    .from('contacts_network_view')
     .select('*')
     .eq('id', id)
+    .in('org_id', orgIds)
     .single()
   if (error || !data) return null
   return data as any
@@ -43,7 +45,7 @@ async function getContact(id: string) {
  * del teléfono para tolerar el prefijo país 57 y formatos con espacios).
  * Los nuevos mensajes llegan luego por Realtime en el cliente.
  */
-async function getWhatsappConversation(phone: string | null) {
+async function getWhatsappConversation(phone: string | null, orgIds: string[]) {
   const empty = { thread: null as WaThread, messages: [] as WaMessage[] }
   if (!phone) return empty
   const digits = phone.replace(/\D/g, '')
@@ -55,12 +57,14 @@ async function getWhatsappConversation(phone: string | null) {
     supabase
       .from('chat_threads' as never)
       .select('*')
+      .in('org_id' as never, orgIds as never)
       .like('phone' as never, `%${match}`)
       .order('last_message_at' as never, { ascending: false })
       .limit(1),
     supabase
       .from('chat_messages' as never)
       .select('*')
+      .in('org_id' as never, orgIds as never)
       .like('phone' as never, `%${match}`)
       .order('created_at' as never, { ascending: true })
       .limit(500),
@@ -75,12 +79,14 @@ async function getWhatsappConversation(phone: string | null) {
 }
 
 export default async function ContactDetailPage({ params }: { params: { id: string } }) {
-  const contact = await getContact(params.id)
+  const org = await getActiveOrg()
+  if (org.error) redirect('/login')
+  const contact = await getContact(params.id, org.accessibleOrgIds)
   if (!contact) notFound()
 
   const fullName = [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim()
   const whatsappPhone = contact.phone || contact.mobile || null
-  const { thread, messages } = await getWhatsappConversation(whatsappPhone)
+  const { thread, messages } = await getWhatsappConversation(whatsappPhone, org.accessibleOrgIds)
 
   return (
     <div className="space-y-6">
@@ -102,6 +108,11 @@ export default async function ContactDetailPage({ params }: { params: { id: stri
         {contact.type && (
           <Badge variant="outline" className={TYPE_BADGES[contact.type] || TYPE_BADGES.lead}>
             {contact.type}
+          </Badge>
+        )}
+        {contact.workspace_name && (
+          <Badge variant="outline" className="border-zinc-700 bg-zinc-900 text-zinc-400">
+            Cliente compartido · origen {contact.workspace_name}
           </Badge>
         )}
       </div>

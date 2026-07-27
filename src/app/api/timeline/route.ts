@@ -71,7 +71,7 @@ export async function GET(request: Request) {
       let activityQuery = supabase
         .from('activity_logs')
         .select('id, activity_type, title, description, metadata, created_at')
-        .eq('org_id', org.orgId)
+        .in('org_id', org.accessibleOrgIds)
         .order('created_at', { ascending: false })
         .limit(parsed.limit)
       activityQuery = parsed.contact_id
@@ -97,7 +97,7 @@ export async function GET(request: Request) {
       const { data: threads } = await supabase
         .from('chat_threads')
         .select('id, phone, contact_name')
-        .eq('org_id', org.orgId)
+        .in('org_id', org.accessibleOrgIds)
         .eq('lead_id', parsed.lead_id)
 
       const threadIds = (threads || []).map((t: any) => t.id)
@@ -105,7 +105,7 @@ export async function GET(request: Request) {
         const { data: msgs } = await supabase
           .from('chat_messages')
           .select('id, thread_id, direction, sender, content, created_at')
-          .eq('org_id', org.orgId)
+          .in('org_id', org.accessibleOrgIds)
           .in('thread_id', threadIds)
           .order('created_at', { ascending: false })
           .limit(parsed.limit)
@@ -138,7 +138,7 @@ export async function GET(request: Request) {
       const { data: emails } = await supabase
         .from('email_logs')
         .select('id, subject, body_preview, sent_at, status, recipient_email')
-        .eq('org_id', org.orgId)
+        .in('org_id', org.accessibleOrgIds)
         .eq('contact_id', parsed.contact_id)
         .order('sent_at', { ascending: false })
         .limit(parsed.limit)
@@ -160,7 +160,7 @@ export async function GET(request: Request) {
       const { data: deals } = await supabase
         .from('deals')
         .select('id, name, value, status, stage_id, created_at, updated_at')
-        .eq('org_id', org.orgId)
+        .in('org_id', org.accessibleOrgIds)
         .eq('contact_id', parsed.contact_id)
         .order('updated_at', { ascending: false })
         .limit(parsed.limit)
@@ -199,7 +199,7 @@ export async function GET(request: Request) {
       let notesQuery = supabase
         .from('notes')
         .select('id, body, author_email, created_at')
-        .eq('org_id', org.orgId)
+        .in('org_id', org.accessibleOrgIds)
         .order('created_at', { ascending: false })
         .limit(parsed.limit)
       if (parsed.contact_id) notesQuery = notesQuery.eq('contact_id', parsed.contact_id)

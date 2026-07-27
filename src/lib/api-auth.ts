@@ -149,18 +149,20 @@ export function validateWebhookToken(
  * - Usa profiles.active_org_id; si no es válida o no es miembro, cae a su
  *   primera membresía.
  * - Las rutas API que escriben datos deben setear `org_id: orgId` al insertar
- *   y filtrar `.eq('org_id', orgId)` al leer (el service-role bypassa RLS).
+ *   y filtrar por `accessibleOrgIds` al leer datos compartidos (el
+ *   service-role bypassa RLS). Las escrituras nuevas usan `orgId` para
+ *   conservar la marca de origen.
  *
  *   const org = await requireOrg()
  *   if (org.error) return org.error  // 401/403
  *   // org.orgId, org.role, org.user
  */
 export async function getActiveOrg(): Promise<
-  | { error: NextResponse; orgId: null; role: null; user: null }
-  | { error: null; orgId: string; role: string; user: User }
+  | { error: NextResponse; orgId: null; accessibleOrgIds: []; role: null; user: null }
+  | { error: null; orgId: string; accessibleOrgIds: string[]; role: string; user: User }
 > {
   const auth = await requireAuth()
-  if (auth.error) return { error: auth.error, orgId: null, role: null, user: null }
+  if (auth.error) return { error: auth.error, orgId: null, accessibleOrgIds: [], role: null, user: null }
 
   const svc = getServiceRoleClient()
 
@@ -188,13 +190,31 @@ export async function getActiveOrg(): Promise<
         { status: 403 },
       ),
       orgId: null,
+      accessibleOrgIds: [],
       role: null,
       user: null,
     }
   }
 
   const role = memberships.find((m) => m.org_id === orgId)?.role ?? 'member'
-  return { error: null, orgId, role, user: auth.user }
+
+  // Una conexión conserva la atribución de cada registro por org_id, pero
+  // permite que Invent y Yumk trabajen sobre los mismos clientes y actividad.
+  // Si la migración de conexiones aún no existe, degradamos al org activo.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: connected } = await (svc.from('organization_connections') as any)
+    .select('connected_org_id')
+    .eq('org_id', orgId)
+    .eq('status', 'active')
+    .or('share_contacts.eq.true,share_commercial_data.eq.true')
+
+  const accessibleOrgIds = Array.from(new Set([
+    orgId,
+    ...(((connected as Array<{ connected_org_id: string }> | null) ?? [])
+      .map((connection) => connection.connected_org_id)),
+  ]))
+
+  return { error: null, orgId, accessibleOrgIds, role, user: auth.user }
 }
 
 /** Alias semántico. */

@@ -38,7 +38,7 @@ function startOfDayBogotaIso(): string {
   return new Date(utcStart).toISOString()
 }
 
-async function getSalesStats(orgId: string) {
+async function getSalesStats(orgIds: string[]) {
   const supabase = getServiceRoleClient()
   const now = new Date()
   const startOfDay = startOfDayBogotaIso()
@@ -55,32 +55,32 @@ async function getSalesStats(orgId: string) {
     recentHotLeads,
     recentMessages,
   ] = await Promise.all([
-    supabase.from('leads' as never).select('id', { count: 'exact', head: true }).eq('org_id' as never, orgId).eq('lead_status' as never, 'hot'),
+    supabase.from('leads' as never).select('id', { count: 'exact', head: true }).in('org_id' as never, orgIds as never).eq('lead_status' as never, 'hot'),
     supabase
       .from('leads' as never)
       .select('id', { count: 'exact', head: true })
-      .eq('org_id' as never, orgId)
+      .in('org_id' as never, orgIds as never)
       .eq('lead_status' as never, 'hot')
       .gte('created_at' as never, startOfDay),
     supabase
       .from('leads' as never)
       .select('id', { count: 'exact', head: true })
-      .eq('org_id' as never, orgId)
+      .in('org_id' as never, orgIds as never)
       .gte('created_at' as never, startOfWeek),
-    supabase.from('chat_threads' as never).select('id', { count: 'exact', head: true }).eq('org_id' as never, orgId).eq('status' as never, 'active'),
-    supabase.from('chat_threads' as never).select('id', { count: 'exact', head: true }).eq('org_id' as never, orgId).eq('bot_active' as never, false),
-    supabase.from('chat_threads' as never).select('id', { count: 'exact', head: true }).eq('org_id' as never, orgId).eq('status' as never, 'qualified'),
+    supabase.from('chat_threads' as never).select('id', { count: 'exact', head: true }).in('org_id' as never, orgIds as never).eq('status' as never, 'active'),
+    supabase.from('chat_threads' as never).select('id', { count: 'exact', head: true }).in('org_id' as never, orgIds as never).eq('bot_active' as never, false),
+    supabase.from('chat_threads' as never).select('id', { count: 'exact', head: true }).in('org_id' as never, orgIds as never).eq('status' as never, 'qualified'),
     supabase
       .from('leads' as never)
       .select('*')
-      .eq('org_id' as never, orgId)
+      .in('org_id' as never, orgIds as never)
       .eq('lead_status' as never, 'hot')
       .order('created_at' as never, { ascending: false })
       .limit(5),
     supabase
       .from('chat_threads' as never)
       .select('*')
-      .eq('org_id' as never, orgId)
+      .in('org_id' as never, orgIds as never)
       .order('last_message_at' as never, { ascending: false })
       .limit(5),
   ])
@@ -102,7 +102,7 @@ async function getSalesStats(orgId: string) {
 export default async function DashboardPage() {
   const org = await getActiveOrg()
   if (org.error) redirect('/login')
-  const s = await getSalesStats(org.orgId)
+  const s = await getSalesStats(org.accessibleOrgIds)
 
   return (
     <div className="space-y-8 max-w-[1400px]">
@@ -110,9 +110,9 @@ export default async function DashboardPage() {
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Sales Machine</h1>
+          <h1 className="text-3xl font-bold text-white tracking-tight">Control Network</h1>
           <p className="text-zinc-500 mt-1 text-sm">
-            Sistema de ventas autónomo de Invent Agency
+            Operación comercial compartida · Invent Agency × Yumk Group
           </p>
         </div>
         <Link

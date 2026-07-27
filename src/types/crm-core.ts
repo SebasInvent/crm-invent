@@ -2,6 +2,7 @@
 
 export interface Contact {
   id: string;
+  org_id?: string | null;
   first_name: string;
   last_name?: string | null;
   email?: string | null;
@@ -69,6 +70,8 @@ export interface Contact {
   
   // Joined fields
   organization_name?: string;
+  workspace_name?: string;
+  workspace_slug?: string;
   assigned_to_name?: string;
 }
 

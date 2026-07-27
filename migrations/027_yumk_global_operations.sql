@@ -1,7 +1,8 @@
 -- 027_yumk_global_operations.sql
 --
--- Workspace operativo de Yumk Group dentro de Control:
---   * aislamiento por organización activa (RLS)
+-- Operación conectada de Yumk Group dentro de Control:
+--   * una sola red comercial Invent ↔ Yumk, sin duplicar clientes
+--   * atribución por organización de origen y contexto de marca activo
 --   * entidades operativas USA / Colombia y monedas USD / COP
 --   * programas comerciales + pipelines
 --   * diagnósticos públicos trazables hasta lead/contacto/deal
@@ -55,6 +56,37 @@ JOIN organizations invent ON invent.slug = 'invent'
 JOIN organization_members m ON m.org_id = invent.id AND m.role IN ('owner','admin')
 WHERE y.slug = 'yumk'
 ON CONFLICT (org_id, user_id) DO NOTHING;
+
+-- ─── Red comercial compartida Invent ↔ Yumk ──────────────────────
+-- Los registros conservan su org_id como marca de origen, pero los equipos
+-- conectados pueden ver y operar la misma ficha de cliente y su actividad.
+CREATE TABLE IF NOT EXISTS organization_connections (
+  org_id                 uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  connected_org_id       uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  relationship           text NOT NULL DEFAULT 'strategic_network',
+  share_contacts         boolean NOT NULL DEFAULT true,
+  share_commercial_data  boolean NOT NULL DEFAULT true,
+  status                 text NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','revoked')),
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  updated_at             timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (org_id, connected_org_id),
+  CHECK (org_id <> connected_org_id)
+);
+CREATE INDEX IF NOT EXISTS idx_org_connections_connected
+  ON organization_connections(connected_org_id, status);
+
+INSERT INTO organization_connections
+  (org_id, connected_org_id, relationship, share_contacts, share_commercial_data, status)
+SELECT source.id, target.id, 'Invent × Yumk operating network', true, true, 'active'
+FROM organizations source
+JOIN organizations target ON target.slug = CASE WHEN source.slug = 'invent' THEN 'yumk' ELSE 'invent' END
+WHERE source.slug IN ('invent','yumk')
+ON CONFLICT (org_id, connected_org_id) DO UPDATE SET
+  relationship = EXCLUDED.relationship,
+  share_contacts = true,
+  share_commercial_data = true,
+  status = 'active',
+  updated_at = now();
 
 -- ─── Entidades / mercados ─────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS operating_entities (
@@ -191,7 +223,7 @@ BEGIN
   END LOOP;
 END $$;
 
--- ─── Aislamiento por workspace activo ─────────────────────────────
+-- ─── Acceso por red conectada ─────────────────────────────────────
 CREATE OR REPLACE FUNCTION active_user_org_id() RETURNS uuid
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
   SELECT p.active_org_id
@@ -202,6 +234,39 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
       WHERE m.user_id = auth.uid() AND m.org_id = p.active_org_id
     )
 $$;
+
+CREATE OR REPLACE FUNCTION active_user_accessible_org_ids() RETURNS SETOF uuid
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT active_user_org_id()
+  WHERE active_user_org_id() IS NOT NULL
+  UNION
+  SELECT c.connected_org_id
+  FROM organization_connections c
+  WHERE c.org_id = active_user_org_id()
+    AND c.status = 'active'
+    AND (c.share_contacts OR c.share_commercial_data)
+$$;
+
+CREATE OR REPLACE FUNCTION active_user_can_access_org(p_org_id uuid) RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT p_org_id IS NOT NULL
+     AND p_org_id IN (SELECT active_user_accessible_org_ids())
+$$;
+
+ALTER TABLE organization_connections ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS org_connections_member_read ON organization_connections;
+CREATE POLICY org_connections_member_read ON organization_connections
+  FOR SELECT TO authenticated
+  USING (
+    org_id IN (SELECT user_org_ids())
+    OR connected_org_id IN (SELECT user_org_ids())
+  );
+
+-- La marca de origen debe poder mostrarse en vistas compartidas aunque el
+-- usuario no sea miembro directo de la organización conectada.
+DROP POLICY IF EXISTS orgs_member_read ON organizations;
+CREATE POLICY orgs_member_read ON organizations FOR SELECT TO authenticated
+  USING (id IN (SELECT user_org_ids()) OR active_user_can_access_org(id));
 
 DO $$
 DECLARE t text; pol record;
@@ -229,19 +294,36 @@ BEGIN
         EXECUTE format('DROP POLICY IF EXISTS %I ON %I', pol.policyname, t);
       END LOOP;
       EXECUTE format(
-        'CREATE POLICY %I ON %I FOR ALL TO authenticated USING (org_id = active_user_org_id()) WITH CHECK (org_id = active_user_org_id())',
-        t || '_active_org', t
+        'CREATE POLICY %I ON %I FOR ALL TO authenticated USING (active_user_can_access_org(org_id)) WITH CHECK (active_user_can_access_org(org_id))',
+        t || '_connected_network', t
       );
     END IF;
   END LOOP;
 END $$;
+
+-- Vista nueva para no alterar el orden de columnas de la vista histórica.
+-- Deja explícita la marca de origen y siempre recoge contacts.org_id.
+DROP VIEW IF EXISTS contacts_network_view;
+CREATE VIEW contacts_network_view AS
+SELECT
+  c.*,
+  parent.company_name AS organization_name,
+  parent.industry AS organization_industry,
+  a.name AS assigned_to_name,
+  a.email AS assigned_to_email,
+  workspace.name AS workspace_name,
+  workspace.slug AS workspace_slug
+FROM contacts c
+LEFT JOIN contacts parent ON parent.id = c.organization_id
+LEFT JOIN agents a ON a.id = c.assigned_to
+LEFT JOIN organizations workspace ON workspace.id = c.org_id;
 
 -- Las vistas deben respetar el RLS de sus tablas base.
 DO $$
 DECLARE v text;
   vistas text[] := ARRAY[
     'quotes_view','deals_full','invoices_view','conversations_view',
-    'inbox_view','documents_view','contacts_with_organization'
+    'inbox_view','documents_view','contacts_with_organization','contacts_network_view'
   ];
 BEGIN
   FOREACH v IN ARRAY vistas LOOP

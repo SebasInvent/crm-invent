@@ -84,12 +84,17 @@ export function NewDealDialog({
     ;(async () => {
       try {
         const supabase = getAuthClient()
+        const orgResponse = await fetch('/api/orgs/current', { cache: 'no-store' })
+        const orgJson = orgResponse.ok ? await orgResponse.json() : null
+        const activeOrgId = orgJson?.active_org_id as string | undefined
 
-        const stagesRes = await supabase
+        let stagesQuery = supabase
           .from('pipeline_stages')
           .select('id, name, default_probability')
           .eq('is_active', true)
           .order('order_index')
+        if (activeOrgId) stagesQuery = stagesQuery.eq('org_id', activeOrgId)
+        const stagesRes = await stagesQuery
         if (active) setStages(((stagesRes.data || []) as unknown) as StageRow[])
 
         if (!lockedContactId) {

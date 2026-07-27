@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getAuthClient } from '@/lib/supabase-auth'
 import { Eye, EyeOff, Loader2, Lock, ScanFace } from 'lucide-react'
@@ -14,7 +14,12 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [showFace, setShowFace] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [brand, setBrand] = useState<'invent' | 'yumk'>('invent')
   const router = useRouter()
+
+  useEffect(() => {
+    if (window.location.hostname.toLowerCase() === 'control.yumkgroup.com') setBrand('yumk')
+  }, [])
 
   /**
    * Destino post-login: respeta ?redirect= (lo setea el middleware al
@@ -68,18 +73,12 @@ export default function LoginPage() {
     <div className="min-h-screen bg-black flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
 
-        {/* Logo */}
-        <div className="flex justify-center mb-10">
-          <img
-            src="https://www.inventagency.co/logo-white.png"
-            alt="Invent Agency"
-            className="h-9 w-auto"
-            onError={(e) => {
-              // Fallback si no carga la imagen
-              const target = e.target as HTMLImageElement
-              target.style.display = 'none'
-            }}
-          />
+        {/* Brand context */}
+        <div className="mb-10 text-center">
+          <p className="text-xl font-black tracking-[0.22em] text-white">CONTROL</p>
+          <p className="mt-2 text-[10px] uppercase tracking-[0.18em] text-zinc-600">
+            {brand === 'yumk' ? 'Yumk Group' : 'Invent Agency'}
+          </p>
         </div>
 
         {/* Card */}
@@ -93,7 +92,9 @@ export default function LoginPage() {
             <h1 className="text-lg font-semibold text-white tracking-tight">
               Acceso Privado
             </h1>
-            <p className="text-zinc-500 text-sm mt-1">Invent Agency CRM</p>
+            <p className="text-zinc-500 text-sm mt-1">
+              {brand === 'yumk' ? 'Yumk CRM · conectado con Invent' : 'Invent CRM · conectado con Yumk'}
+            </p>
           </div>
 
           {/* Google sign-in (preferido) */}
@@ -135,7 +136,7 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="tu@inventagency.co"
+                placeholder={brand === 'yumk' ? 'tu@yumkgroup.com' : 'tu@inventagency.co'}
                 required
                 autoComplete="email"
                 className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3.5 py-2.5 text-white text-sm placeholder-zinc-600 focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600 transition-colors"
@@ -207,7 +208,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-zinc-800 text-xs mt-6">
-          © {new Date().getFullYear()} Invent Agency · Acceso restringido
+          © {new Date().getFullYear()} Invent Agency × Yumk Group · Acceso restringido
         </p>
       </div>
 

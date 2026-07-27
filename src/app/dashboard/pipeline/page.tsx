@@ -147,7 +147,6 @@ export default function PipelinePage() {
         .from('contacts')
         .select('id, first_name, last_name, email, company_name')
         .eq('status', 'active')
-        .eq('org_id', activeOrgId!)
         .order('first_name') as unknown as Promise<{ data: Contact[] | null; error: { message: string } | null }>,
     enabled: !!activeOrgId,
     staleTime: 5 * 60_000,

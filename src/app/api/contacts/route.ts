@@ -78,6 +78,38 @@ export async function POST(request: Request) {
 
   const supabase = getServiceRoleClient()
 
+  // La ficha de cliente es compartida entre las marcas conectadas. Evitamos
+  // crear otra persona en Yumk si ya existe en Invent (o viceversa).
+  let existingContact: { id: string; first_name: string; last_name: string | null; org_id: string } | null = null
+  if (parsed.email) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase.from('contacts') as any)
+      .select('id, first_name, last_name, org_id')
+      .in('org_id', org.accessibleOrgIds)
+      .ilike('email', parsed.email)
+      .limit(1)
+      .maybeSingle()
+    existingContact = data ?? null
+  }
+  if (!existingContact && parsed.phone) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase.from('contacts') as any)
+      .select('id, first_name, last_name, org_id')
+      .in('org_id', org.accessibleOrgIds)
+      .eq('phone', parsed.phone)
+      .limit(1)
+      .maybeSingle()
+    existingContact = data ?? null
+  }
+
+  if (existingContact) {
+    return NextResponse.json({
+      error: 'duplicate_contact',
+      message: 'Este cliente ya existe en la red Invent × Yumk. Abrimos su ficha compartida.',
+      contact: existingContact,
+    }, { status: 409 })
+  }
+
   // Coerce empty-string optional URLs to null so Postgres stores NULL,
   // not the literal empty string.
   const insert = {

@@ -167,6 +167,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Yumk workspace is not configured' }, { status: 503, headers })
   }
 
+  const { data: networkConnections } = await (supabase.from('organization_connections') as any)
+    .select('connected_org_id')
+    .eq('org_id', org.id)
+    .eq('status', 'active')
+    .eq('share_contacts', true)
+  const contactOrgIds = Array.from(new Set([
+    org.id,
+    ...(((networkConnections as Array<{ connected_org_id: string }> | null) ?? [])
+      .map((connection) => connection.connected_org_id)),
+  ]))
+
   const entityCode = input.market === 'CO' ? 'CO' : 'US'
   const { data: entity } = await (supabase.from('operating_entities') as any)
     .select('id, currency')
@@ -213,13 +224,13 @@ export async function POST(request: Request) {
   }
 
   const { data: existingContact } = await (supabase.from('contacts') as any)
-    .select('id')
-    .eq('org_id', org.id)
+    .select('id, org_id, first_name, last_name, type, status, phone, company_name, lead_score, priority, tags, source_details')
+    .in('org_id', contactOrgIds)
     .ilike('email', input.email)
     .limit(1)
     .maybeSingle()
 
-  const contactPayload = {
+  const newContactPayload = {
     first_name: firstName,
     last_name: lastName,
     email: input.email,
@@ -241,15 +252,46 @@ export async function POST(request: Request) {
     updated_at: now,
   }
 
-  const contactResult = existingContact?.id
+  const priorityOrder = { low: 1, medium: 2, high: 3, critical: 4 } as const
+  const existingPriority = existingContact?.priority as keyof typeof priorityOrder | undefined
+  const strongestPriority = existingPriority && priorityOrder[existingPriority] > priorityOrder[qualification.priority]
+    ? existingPriority
+    : qualification.priority
+
+  // Si el contacto nació en Invent no se reasigna a Yumk: se enriquece la
+  // misma ficha maestra y la oportunidad nueva conserva org_id = Yumk.
+  const sharedContactUpdate = existingContact?.id ? {
+    first_name: existingContact.first_name || firstName,
+    last_name: existingContact.last_name || lastName,
+    email: input.email,
+    phone: input.phone || existingContact.phone || null,
+    company_name: input.company || existingContact.company_name || null,
+    country,
+    lead_score: Math.max(Number(existingContact.lead_score ?? 0), qualification.score),
+    priority: strongestPriority,
+    consent_status: 'granted',
+    consent_date: now,
+    tags: Array.from(new Set([
+      ...((existingContact.tags as string[] | null) ?? []),
+      'yumk',
+      'website-diagnostic',
+      input.market.toLowerCase(),
+    ])),
+    source_details: {
+      ...((existingContact.source_details as Record<string, unknown> | null) ?? {}),
+      last_yumk_diagnostic: sourceDetails,
+    },
+    updated_at: now,
+  } : null
+
+  const contactResult = existingContact?.id && sharedContactUpdate
     ? await (supabase.from('contacts') as any)
-        .update(contactPayload)
+        .update(sharedContactUpdate)
         .eq('id', existingContact.id)
-        .eq('org_id', org.id)
         .select('id')
         .single()
     : await (supabase.from('contacts') as any)
-        .insert({ ...contactPayload, created_at: now })
+        .insert({ ...newContactPayload, created_at: now })
         .select('id')
         .single()
 

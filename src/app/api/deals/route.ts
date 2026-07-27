@@ -51,9 +51,9 @@ export async function POST(request: Request) {
   const { data: contact } = await (supabase.from('contacts') as any)
     .select('id')
     .eq('id', parsed.contact_id)
-    .eq('org_id', org.orgId)
+    .in('org_id', org.accessibleOrgIds)
     .maybeSingle()
-  if (!contact) return NextResponse.json({ error: 'Contact not found in active workspace' }, { status: 404 })
+  if (!contact) return NextResponse.json({ error: 'Contact not found in the connected network' }, { status: 404 })
 
   if (parsed.pipeline_id) {
     const { data: pipeline } = await (supabase.from('pipelines') as any)
