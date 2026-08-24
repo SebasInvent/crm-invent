@@ -139,6 +139,52 @@ export async function POST(request: Request) {
   const supabase = getServiceRoleClient()
 
   try {
+    // Meta retries a webhook whenever the receiver does not acknowledge it in
+    // time. The provider message id is stable across those retries, so reject
+    // duplicates before touching the thread or inserting another message.
+    if (parsed.provider_message_id) {
+      const { data: existingMessages, error: duplicateLookupError } = await supabase
+        .from('chat_messages')
+        .select('id, thread_id')
+        .eq('metadata->>provider_message_id', parsed.provider_message_id)
+        .order('created_at', { ascending: true })
+        .limit(1)
+      if (duplicateLookupError) throw new Error(duplicateLookupError.message)
+
+      const existingMessage = (existingMessages ?? [])[0] as {
+        id: string
+        thread_id: string
+      } | undefined
+      if (existingMessage) {
+        const { data: existingThread, error: existingThreadError } = await supabase
+          .from('chat_threads')
+          .select('id, lead_id, bot_active, status')
+          .eq('id', existingMessage.thread_id)
+          .maybeSingle()
+        if (existingThreadError) throw new Error(existingThreadError.message)
+
+        logAriaAction('whatsapp.event', {
+          direction: parsed.direction,
+          sender: parsed.sender,
+          bot_type: parsed.bot_type,
+          has_provider_message_id: true,
+          duplicate: true,
+        }, 'ok')
+
+        return NextResponse.json({
+          ok: true,
+          duplicate: true,
+          thread_id: existingMessage.thread_id,
+          message_id: existingMessage.id,
+          lead_id: (existingThread as { lead_id?: string | null } | null)?.lead_id ?? null,
+          bot_active: (existingThread as { bot_active?: boolean } | null)?.bot_active ?? true,
+          status: (existingThread as { status?: string } | null)?.status ?? null,
+          delivery_status: parsed.delivery_status ?? null,
+          provider_message_id: parsed.provider_message_id,
+        })
+      }
+    }
+
     let leadId = parsed.lead_id ?? null
     let contactName = parsed.contact_name ?? null
     let orgId: string | null = null
