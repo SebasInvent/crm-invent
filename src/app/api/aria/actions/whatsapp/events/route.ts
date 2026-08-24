@@ -13,7 +13,7 @@ const eventSchema = z.object({
   lead_id: z.string().uuid().optional(),
   contact_name: z.string().min(1).max(160).optional(),
   bot_type: z.string().min(1).max(60).default('tickean'),
-  thread_status: z.enum(['active', 'cold']).optional(),
+  thread_status: z.enum(['active', 'cold', 'qualified', 'closed']).optional(),
   delivery_status: z.enum(['accepted', 'sent', 'delivered', 'read', 'failed']).optional(),
   provider_message_id: z.string().min(10).max(300).optional(),
 })
