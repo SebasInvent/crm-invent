@@ -7,6 +7,13 @@ import { useSupabaseQuery, useSupabaseMutation } from '@/lib/hooks/useSupabaseQu
 import { Send, Loader2, MessageCircle, Bot, User, Phone, WifiOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
+import {
+  formatWhatsAppNumber,
+  senderLineLabel,
+  useWhatsAppLines,
+  type WhatsAppLineId,
+  type WhatsAppSenderMetadata,
+} from '@/lib/hooks/useWhatsAppLines'
 
 export type WaMessage = {
   id: string
@@ -15,7 +22,7 @@ export type WaMessage = {
   direction: 'inbound' | 'outbound'
   sender: 'customer' | 'bot' | 'human'
   content: string
-  metadata?: { delivery_status?: string } | null
+  metadata?: WhatsAppSenderMetadata | null
   created_at: string
 }
 
@@ -24,6 +31,7 @@ export type WaThread = {
   phone: string
   bot_active?: boolean
   status?: string
+  metadata?: WhatsAppSenderMetadata | null
 } | null
 
 function digitsOf(p: string): string {
@@ -58,8 +66,11 @@ export function ContactConversation({
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState('')
   const [realtime, setRealtime] = useState<'connecting' | 'live' | 'offline'>('connecting')
+  const [selectedLineId, setSelectedLineId] = useState<WhatsAppLineId | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
   const msgKey = useMemo(() => ['contact-whatsapp', 'messages', match], [match])
+  const { data: lineConfig, isLoading: loadingLines } = useWhatsAppLines()
+  const selectedLine = lineConfig?.lines.find((line) => line.id === selectedLineId) || null
 
   const { data: messages = [], isLoading } = useSupabaseQuery<WaMessage[]>({
     queryKey: msgKey,
@@ -75,6 +86,22 @@ export function ContactConversation({
     enabled: !!match,
     initialData: initialMessages,
   })
+
+  useEffect(() => {
+    if (!lineConfig) return
+    const mostRecentLineId = [...messages]
+      .reverse()
+      .find((message) => message.metadata?.sender_line_id)
+      ?.metadata?.sender_line_id
+    const preferredId = initialThread?.metadata?.sender_line_id || mostRecentLineId
+    const preferred = lineConfig.lines.find(
+      (line) => line.enabled && line.id === preferredId,
+    )
+    const fallback = lineConfig.lines.find(
+      (line) => line.enabled && line.id === lineConfig.defaultLineId,
+    ) || lineConfig.lines.find((line) => line.enabled)
+    setSelectedLineId(preferred?.id || fallback?.id || null)
+  }, [initialThread?.metadata?.sender_line_id, lineConfig, messages])
 
   // Auto-scroll al fondo cuando llegan mensajes
   useEffect(() => {
@@ -123,23 +150,26 @@ export function ContactConversation({
     }
   }, [supabase, match, queryClient, msgKey])
 
-  const sendMutation = useSupabaseMutation<{ text: string }, void>({
-    mutationFn: async ({ text }) => {
+  const sendMutation = useSupabaseMutation<{ text: string; lineId: WhatsAppLineId }, void>({
+    mutationFn: async ({ text, lineId }) => {
       const sendPhone =
         initialThread?.phone || (digits.length === 10 ? `57${digits}` : digits)
       const res = await fetch('/api/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: sendPhone, text, threadId: initialThread?.id }),
+        body: JSON.stringify({ phone: sendPhone, text, threadId: initialThread?.id, lineId }),
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null)
+        throw new Error(payload?.details || payload?.error || `HTTP ${res.status}`)
+      }
     },
     errorMessage: 'No se pudo enviar el mensaje',
   })
 
   function send() {
     const text = draft.trim()
-    if (!text || sendMutation.isPending) return
+    if (!text || !selectedLineId || sendMutation.isPending) return
     setDraft('')
     const optimistic: WaMessage = {
       id: 'temp-' + Date.now(),
@@ -148,11 +178,18 @@ export function ContactConversation({
       direction: 'outbound',
       sender: 'human',
       content: text,
+      metadata: {
+        delivery_status: 'queued',
+        sender_line_id: selectedLineId,
+        sender_label: selectedLine?.label,
+        sender_display_phone: selectedLine?.displayPhone,
+        sender_provider: selectedLine?.provider,
+      },
       created_at: new Date().toISOString(),
     }
     queryClient.setQueryData<WaMessage[]>(msgKey, (prev) => [...(prev ?? []), optimistic])
     sendMutation.mutate(
-      { text },
+      { text, lineId: selectedLineId },
       {
         onError: () => {
           queryClient.setQueryData<WaMessage[]>(
@@ -245,6 +282,25 @@ export function ContactConversation({
 
       {!readOnly && (
         <div className="border-t border-zinc-900 p-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <label htmlFor={`contact-whatsapp-line-${match}`} className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+              Enviar desde
+            </label>
+            <select
+              id={`contact-whatsapp-line-${match}`}
+              value={selectedLineId || ''}
+              onChange={(event) => setSelectedLineId(event.target.value as WhatsAppLineId)}
+              disabled={loadingLines || sending}
+              className="min-w-0 rounded-lg border border-zinc-800 bg-black px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500 disabled:opacity-50"
+            >
+              {!selectedLineId && <option value="">Sin línea disponible</option>}
+              {lineConfig?.lines.map((line) => (
+                <option key={line.id} value={line.id} disabled={!line.enabled}>
+                  {line.label} · {line.displayPhone ? formatWhatsAppNumber(line.displayPhone) : 'línea principal'}{line.enabled ? '' : ' (no configurada)'}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="flex items-end gap-2 rounded-xl border border-zinc-800 bg-black p-2 transition-colors focus-within:border-zinc-700">
             <textarea
               value={draft}
@@ -261,7 +317,8 @@ export function ContactConversation({
             />
             <button
               onClick={send}
-              disabled={!draft.trim() || sending}
+              disabled={!draft.trim() || !selectedLineId || sending}
+              title={selectedLine ? `Enviar desde ${selectedLine.label}` : 'No hay una línea configurada'}
               className="rounded-lg bg-emerald-500 p-2 text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-30"
             >
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -278,6 +335,7 @@ function Bubble({ m }: { m: WaMessage }) {
   const isHuman = m.sender === 'human'
   const isBot = m.sender === 'bot'
   const deliveryLabel: Record<string, string> = {
+    queued: 'Preparando',
     accepted: 'Aceptado por Meta',
     sent: 'Enviado',
     delivered: 'Entregado',
@@ -285,6 +343,7 @@ function Bubble({ m }: { m: WaMessage }) {
     failed: 'Falló',
   }
   const deliveryStatus = m.metadata?.delivery_status
+  const lineLabel = senderLineLabel(m.metadata)
   return (
     <div className={cn('flex', isOutbound ? 'justify-end' : 'justify-start')}>
       <div className="max-w-[78%]">
@@ -315,6 +374,7 @@ function Bubble({ m }: { m: WaMessage }) {
               minute: '2-digit',
             })}
             {isOutbound && deliveryStatus ? ` · ${deliveryLabel[deliveryStatus] || deliveryStatus}` : ''}
+            {lineLabel ? ` · ${lineLabel}` : ''}
           </span>
         </div>
       </div>

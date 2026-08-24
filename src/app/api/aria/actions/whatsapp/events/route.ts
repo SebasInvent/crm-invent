@@ -16,6 +16,11 @@ const eventSchema = z.object({
   thread_status: z.enum(['active', 'cold', 'qualified', 'closed']).optional(),
   delivery_status: z.enum(['accepted', 'sent', 'delivered', 'read', 'failed']).optional(),
   provider_message_id: z.string().min(10).max(300).optional(),
+  sender_line_id: z.string().min(1).max(60).optional(),
+  sender_label: z.string().min(1).max(100).optional(),
+  sender_display_phone: z.string().min(8).max(30).optional(),
+  sender_phone_number_id: z.string().min(1).max(100).optional(),
+  sender_provider: z.string().min(1).max(60).optional(),
 })
 
 const deliveryStatusSchema = z.object({
@@ -71,7 +76,7 @@ export async function GET(request: Request) {
   try {
     let threadQuery = supabase
       .from('chat_threads')
-      .select('id, phone, contact_name, bot_type, bot_active, status, lead_id, last_message_at, last_message_preview')
+      .select('id, phone, contact_name, bot_type, bot_active, status, lead_id, last_message_at, last_message_preview, metadata')
       .order('last_message_at', { ascending: false })
       .limit(1)
     threadQuery = leadId
@@ -142,6 +147,17 @@ export async function POST(request: Request) {
   }
 
   const occurredAt = parsed.occurred_at ?? new Date().toISOString()
+  const senderMetadata = {
+    ...(parsed.sender_line_id ? { sender_line_id: parsed.sender_line_id } : {}),
+    ...(parsed.sender_label ? { sender_label: parsed.sender_label } : {}),
+    ...(parsed.sender_display_phone
+      ? { sender_display_phone: normalizePhone(parsed.sender_display_phone) }
+      : {}),
+    ...(parsed.sender_phone_number_id
+      ? { sender_phone_number_id: parsed.sender_phone_number_id }
+      : {}),
+    ...(parsed.sender_provider ? { sender_provider: parsed.sender_provider } : {}),
+  }
   // Production still has the original chat_threads constraint
   // (invent | bmac | manual). Keep the external bot label in logs while
   // persisting Tickean/Encore acquisition conversations in the Invent lane.
@@ -235,7 +251,7 @@ export async function POST(request: Request) {
 
     const { data: existingThread, error: threadLookupError } = await supabase
       .from('chat_threads')
-      .select('id, bot_active, status, lead_id, contact_name, org_id')
+      .select('id, bot_active, status, lead_id, contact_name, org_id, metadata')
       .eq('phone', phone)
       .maybeSingle()
     if (threadLookupError) throw new Error(threadLookupError.message)
@@ -247,6 +263,7 @@ export async function POST(request: Request) {
       lead_id: string | null
       contact_name: string | null
       org_id: string | null
+      metadata: Record<string, unknown> | null
     } | null
 
     orgId = thread?.org_id ?? orgId
@@ -266,6 +283,10 @@ export async function POST(request: Request) {
       last_message_preview: parsed.content.slice(0, 120),
       lead_id: thread?.lead_id ?? leadId,
       contact_name: thread?.contact_name ?? contactName,
+      metadata: {
+        ...(thread?.metadata ?? {}),
+        ...senderMetadata,
+      },
       status:
         parsed.thread_status ?? (parsed.direction === 'inbound' && (!thread || ['cold', 'pending'].includes(thread.status))
           ? 'active'
@@ -277,7 +298,7 @@ export async function POST(request: Request) {
         .from('chat_threads')
         .update(threadUpdates as never)
         .eq('id', thread.id)
-        .select('id, bot_active, status, lead_id, contact_name, org_id')
+        .select('id, bot_active, status, lead_id, contact_name, org_id, metadata')
         .single()
       if (error) throw new Error(error.message)
       thread = updated as typeof thread
@@ -290,7 +311,7 @@ export async function POST(request: Request) {
           bot_active: true,
           ...threadUpdates,
         } as never)
-        .select('id, bot_active, status, lead_id, contact_name, org_id')
+        .select('id, bot_active, status, lead_id, contact_name, org_id, metadata')
         .single()
       if (error) throw new Error(error.message)
       thread = created as typeof thread
@@ -307,6 +328,7 @@ export async function POST(request: Request) {
         sender: parsed.sender,
         content: parsed.content,
         metadata: {
+          ...senderMetadata,
           ...(parsed.delivery_status ? { delivery_status: parsed.delivery_status } : {}),
           ...(parsed.provider_message_id ? { provider_message_id: parsed.provider_message_id } : {}),
         },

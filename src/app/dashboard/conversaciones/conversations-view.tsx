@@ -6,13 +6,19 @@ import { useQueryClient } from '@tanstack/react-query'
 import { getAuthClient } from '@/lib/supabase-auth'
 import { Send, Bot, User, Pause, Play, Phone, Search, MessageCircle, Sparkles, CheckCircle2, Loader2, RefreshCw, Wifi, WifiOff, ChevronLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { toast } from 'sonner'
 import { EmptyState } from '@/components/ui/empty-state'
 import {
   useSupabaseQuery,
   useSupabaseMutation,
   queryKeys,
 } from '@/lib/hooks/useSupabaseQuery'
+import {
+  formatWhatsAppNumber,
+  senderLineLabel,
+  useWhatsAppLines,
+  type WhatsAppLineId,
+  type WhatsAppSenderMetadata,
+} from '@/lib/hooks/useWhatsAppLines'
 
 type Thread = {
   id: string
@@ -24,6 +30,7 @@ type Thread = {
   last_message_preview: string | null
   last_message_at: string
   lead_id: string | null
+  metadata?: WhatsAppSenderMetadata | null
 }
 
 type Message = {
@@ -32,7 +39,7 @@ type Message = {
   direction: 'inbound' | 'outbound'
   sender: 'customer' | 'bot' | 'human'
   content: string
-  metadata?: { delivery_status?: string } | null
+  metadata?: WhatsAppSenderMetadata | null
   created_at: string
 }
 
@@ -58,8 +65,10 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
   const [search, setSearch] = useState('')
   const [realtimeStatus, setRealtimeStatus] = useState<'connecting' | 'live' | 'offline'>('connecting')
   const [unreadCount, setUnreadCount] = useState(0)
+  const [selectedLineId, setSelectedLineId] = useState<WhatsAppLineId | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const supabase = useMemo(() => getAuthClient(), [])
+  const { data: lineConfig, isLoading: loadingLines } = useWhatsAppLines()
 
   // ─── Threads list. Hydrates with `initialThreads` from server (instant
   //     paint) and React Query keeps it fresh in the background.
@@ -76,6 +85,19 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
     })
 
   const activeThread = threads.find((t) => t.id === activeThreadId) || null
+  const selectedLine = lineConfig?.lines.find((line) => line.id === selectedLineId) || null
+
+  useEffect(() => {
+    if (!lineConfig) return
+    const threadLineId = activeThread?.metadata?.sender_line_id
+    const preferred = lineConfig.lines.find(
+      (line) => line.enabled && line.id === threadLineId,
+    )
+    const fallback = lineConfig.lines.find(
+      (line) => line.enabled && line.id === lineConfig.defaultLineId,
+    ) || lineConfig.lines.find((line) => line.enabled)
+    setSelectedLineId(preferred?.id || fallback?.id || null)
+  }, [activeThread?.id, activeThread?.metadata?.sender_line_id, lineConfig])
 
   // ─── Messages for the active thread. Disabled when no thread selected.
   const { data: messages = [], isLoading: loadingMessages } = useSupabaseQuery<Message[]>({
@@ -118,7 +140,16 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
                 return prev.map((message) => message.id === newMsg.id ? newMsg : message)
               }
               if (prev.find((m) => m.id === newMsg.id)) return prev
-              return [...prev, newMsg]
+              const withoutOptimistic = prev.filter(
+                (message) =>
+                  !(
+                    message.id.startsWith('temp-') &&
+                    message.direction === newMsg.direction &&
+                    message.content === newMsg.content &&
+                    message.metadata?.sender_line_id === newMsg.metadata?.sender_line_id
+                  ),
+              )
+              return [...withoutOptimistic, newMsg]
             },
           )
           // Bump unread counter only for inbound messages on inactive threads
@@ -177,23 +208,26 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
   // ─── Send message mutation. Optimistically appends to messages cache,
   //     rolls back on failure, restores draft.
   const sendMessageMutation = useSupabaseMutation<
-    { thread: Thread; text: string },
+    { thread: Thread; text: string; lineId: WhatsAppLineId },
     void
   >({
-    mutationFn: async ({ thread, text }) => {
+    mutationFn: async ({ thread, text, lineId }) => {
       const res = await fetch('/api/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: thread.phone, text, threadId: thread.id }),
+        body: JSON.stringify({ phone: thread.phone, text, threadId: thread.id, lineId }),
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null)
+        throw new Error(payload?.details || payload?.error || `HTTP ${res.status}`)
+      }
     },
     invalidateKeys: [], // realtime will append the message via setQueryData
     errorMessage: 'No se pudo enviar el mensaje',
   })
 
   function sendMessage() {
-    if (!draft.trim() || !activeThread || sendMessageMutation.isPending) return
+    if (!draft.trim() || !activeThread || !selectedLineId || sendMessageMutation.isPending) return
     const text = draft
     setDraft('')
 
@@ -204,6 +238,13 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
       direction: 'outbound',
       sender: 'human',
       content: text,
+      metadata: {
+        delivery_status: 'queued',
+        sender_line_id: selectedLineId,
+        sender_label: selectedLine?.label,
+        sender_display_phone: selectedLine?.displayPhone,
+        sender_provider: selectedLine?.provider,
+      },
       created_at: new Date().toISOString(),
     }
     queryClient.setQueryData<Message[]>(
@@ -212,7 +253,7 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
     )
 
     sendMessageMutation.mutate(
-      { thread: activeThread, text },
+      { thread: activeThread, text, lineId: selectedLineId },
       {
         onError: () => {
           // Rollback the optimistic message + restore draft
@@ -440,6 +481,11 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
                     {t.last_message_preview || '—'}
                   </p>
                 </div>
+                {senderLineLabel(t.metadata) && (
+                  <div className="pl-5 text-[10px] text-emerald-400/80 truncate">
+                    {senderLineLabel(t.metadata)}
+                  </div>
+                )}
               </button>
             ))
           )}
@@ -483,13 +529,16 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
                   <div className="text-sm font-semibold truncate">
                     {activeThread.contact_name || `+${activeThread.phone}`}
                   </div>
-                  <div className="text-xs text-zinc-500">
+                  <div className="text-xs text-zinc-500 truncate">
                     +{activeThread.phone} ·{' '}
                     {activeThread.bot_active ? (
                       <span className="text-blue-400">Bot activo</span>
                     ) : (
                       <span className="text-orange-400">Tú estás respondiendo</span>
                     )}
+                    {senderLineLabel(activeThread.metadata)
+                      ? ` · vía ${senderLineLabel(activeThread.metadata)}`
+                      : ''}
                   </div>
                 </div>
               </div>
@@ -536,6 +585,30 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
 
             {/* Composer */}
             <div className="border-t border-zinc-900 p-4">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <label htmlFor="whatsapp-line" className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+                  Enviar desde
+                </label>
+                <select
+                  id="whatsapp-line"
+                  value={selectedLineId || ''}
+                  onChange={(event) => setSelectedLineId(event.target.value as WhatsAppLineId)}
+                  disabled={loadingLines || sending}
+                  className="min-w-0 rounded-lg border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500 disabled:opacity-50"
+                >
+                  {!selectedLineId && <option value="">Sin línea disponible</option>}
+                  {lineConfig?.lines.map((line) => (
+                    <option key={line.id} value={line.id} disabled={!line.enabled}>
+                      {line.label} · {line.displayPhone ? formatWhatsAppNumber(line.displayPhone) : 'línea principal'}{line.enabled ? '' : ' (no configurada)'}
+                    </option>
+                  ))}
+                </select>
+                {selectedLine && (
+                  <span className="text-[10px] text-emerald-400">
+                    {selectedLine.provider === 'meta_cloud' ? 'Meta Cloud API oficial' : 'Evolution API'}
+                  </span>
+                )}
+              </div>
               <div className="flex items-end gap-2 bg-zinc-950 border border-zinc-800 rounded-xl p-2 focus-within:border-zinc-700 transition-colors">
                 <textarea
                   value={draft}
@@ -556,7 +629,8 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
                 />
                 <button
                   onClick={sendMessage}
-                  disabled={!draft.trim() || sending}
+                  disabled={!draft.trim() || !selectedLineId || sending}
+                  title={selectedLine ? `Enviar desde ${selectedLine.label}` : 'No hay una línea configurada'}
                   className="bg-white text-black rounded-lg p-2 hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 >
                   {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -578,6 +652,13 @@ export default function ConversationsView({ initialThreads }: { initialThreads: 
               {activeThread.contact_name || 'Sin nombre'}
             </div>
             <div className="text-xs text-zinc-400 font-mono">+{activeThread.phone}</div>
+          </div>
+
+          <div className="p-5 border-b border-zinc-900">
+            <div className="text-xs text-zinc-500 mb-2">Línea de WhatsApp</div>
+            <div className="text-xs text-white">
+              {senderLineLabel(activeThread.metadata) || 'Todavía sin identificar'}
+            </div>
           </div>
 
           <div className="p-5 border-b border-zinc-900">
@@ -643,6 +724,7 @@ function MessageBubble({ message }: { message: Message }) {
   const isHuman = message.sender === 'human'
   const isBot = message.sender === 'bot'
   const deliveryLabel: Record<string, string> = {
+    queued: 'Preparando',
     accepted: 'Aceptado por Meta',
     sent: 'Enviado',
     delivered: 'Entregado',
@@ -650,6 +732,7 @@ function MessageBubble({ message }: { message: Message }) {
     failed: 'Falló',
   }
   const deliveryStatus = message.metadata?.delivery_status
+  const lineLabel = senderLineLabel(message.metadata)
 
   return (
     <div className={cn('flex', isOutbound ? 'justify-end' : 'justify-start')}>
@@ -683,6 +766,7 @@ function MessageBubble({ message }: { message: Message }) {
             {isOutbound && deliveryStatus
               ? ` · ${deliveryLabel[deliveryStatus] || deliveryStatus}`
               : ''}
+            {lineLabel ? ` · ${lineLabel}` : ''}
           </span>
         </div>
       </div>

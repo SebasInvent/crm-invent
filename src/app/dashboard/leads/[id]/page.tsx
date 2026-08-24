@@ -69,7 +69,7 @@ async function getLeadConversation(lead: any): Promise<{
   const supabase = getServiceRoleClient()
   let { data: threads } = await supabase
     .from('chat_threads')
-    .select('id, phone, bot_active, status')
+    .select('id, phone, bot_active, status, metadata')
     .eq('lead_id', lead.id)
     .order('last_message_at', { ascending: false })
     .limit(1)
@@ -80,7 +80,7 @@ async function getLeadConversation(lead: any): Promise<{
     if (tail) {
       const fallback = await supabase
         .from('chat_threads')
-        .select('id, phone, bot_active, status')
+        .select('id, phone, bot_active, status, metadata')
         .like('phone', `%${tail}`)
         .order('last_message_at', { ascending: false })
         .limit(1)
@@ -93,7 +93,7 @@ async function getLeadConversation(lead: any): Promise<{
 
   const { data: messages } = await supabase
     .from('chat_messages')
-    .select('id, thread_id, phone, direction, sender, content, created_at')
+    .select('id, thread_id, phone, direction, sender, content, metadata, created_at')
     .eq('thread_id', thread.id)
     .order('created_at', { ascending: true })
     .limit(200)
