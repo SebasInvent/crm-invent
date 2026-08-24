@@ -91,7 +91,19 @@ export async function GET(request: Request) {
       .limit(500)
     if (messageError) throw new Error(messageError.message)
 
-    return NextResponse.json({ ok: true, thread, messages: messages ?? [] })
+    // Preserve the raw rows for audit, but suppress historical webhook retries
+    // in every reader. New duplicates are rejected on write below; this covers
+    // conversations created before that protection existed.
+    const seenProviderMessageIds = new Set<string>()
+    const deduplicatedMessages = (messages ?? []).filter((message: any) => {
+      const providerMessageId = String(message.metadata?.provider_message_id ?? '').trim()
+      if (!providerMessageId) return true
+      if (seenProviderMessageIds.has(providerMessageId)) return false
+      seenProviderMessageIds.add(providerMessageId)
+      return true
+    })
+
+    return NextResponse.json({ ok: true, thread, messages: deduplicatedMessages })
   } catch (error) {
     return NextResponse.json(
       { error: 'WhatsApp conversation lookup failed', details: error instanceof Error ? error.message : 'unknown' },
