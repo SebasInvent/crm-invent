@@ -28,6 +28,7 @@ import {
   Target,
   CalendarCheck,
   X,
+  KeyRound,
 } from 'lucide-react'
 
 const navigation = [
@@ -49,6 +50,7 @@ const navigation = [
   { name: 'Estrategia', href: '/dashboard/estrategia', icon: Megaphone },
   { name: 'Publicaciones', href: '/dashboard/publicaciones', icon: CalendarCheck },
   { name: 'Emails', href: '/dashboard/emails', icon: Mail },
+  { name: 'Licencias Órbita', href: '/dashboard/licencias', icon: KeyRound },
   { name: 'Configuración', href: '/dashboard/settings', icon: Settings },
 ]
 

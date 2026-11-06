@@ -27,6 +27,7 @@ import {
   Hash,
   Loader2,
   TrendingUp,
+  KeyRound,
 } from 'lucide-react'
 
 interface NavItem {
@@ -54,6 +55,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Entregables', href: '/dashboard/deliverables', icon: Package },
   { label: 'Calendario', href: '/dashboard/calendar', icon: Calendar },
   { label: 'Emails', href: '/dashboard/emails', icon: Mail },
+  { label: 'Licencias Órbita', href: '/dashboard/licencias', icon: KeyRound, keywords: ['orbita', 'licencias', 'activaciones'] },
   { label: 'Configuración', href: '/dashboard/settings', icon: Settings, keywords: ['settings', 'ajustes'] },
 ]
 
